@@ -1,177 +1,107 @@
-using ReadingTheReader.core.Application.ApplicationContracts.EyeTracker;
-using ReadingTheReader.core.Domain;
-
 #if WINDOWS
 using Tobii.Research;
 #endif
+using ReadingTheReader.core.Application.ApplicationContracts.EyeTracker;
+using ReadingTheReader.core.Domain;
 
 namespace ReadingTheReader.TobiiEyetracker;
 
 public class TobiiEyeTrackerManager : IEyeTrackerManager
 {
+    public event EventHandler<GazeData>? GazeDataReceived;
+
 #if WINDOWS
-    private IEyeTracker? _currentTracker;
-    private bool _isTracking = false;
+    private IEyeTracker? _activeTracker;
 
-    public async Task<List<EyeTrackerDevice>> GetAllConnectedEyeTrackers()
+    public Task<List<EyeTrackerDevice>> GetAllConnectedEyeTrackers()
     {
-        var trackers = await EyeTrackingOperations.FindAllEyeTrackersAsync();
-        return trackers.Select(tracker => new EyeTrackerDevice()
+        var found = EyeTrackingOperations.FindAllEyeTrackers();
+        var devices = found.Select(t => new EyeTrackerDevice
         {
-            Name = tracker.DeviceName,
-            SerialNumber = tracker.SerialNumber,
-            Model = tracker.Model
+            Name = t.DeviceName,
+            SerialNumber = t.SerialNumber,
+            Model = t.Model
         }).ToList();
+        return Task.FromResult(devices);
     }
 
-    public async Task StartEyeTracking()
+    public Task StartEyeTracking()
     {
-        Console.WriteLine("=== Tobii Eye Tracker Manager - Starting Eye Tracking ===");
+        var found = EyeTrackingOperations.FindAllEyeTrackers();
+        if (found.Count == 0)
+            throw new InvalidOperationException("No Tobii eye trackers found.");
 
-        try
+        _activeTracker = found[0];
+
+        // Apply license if present
+        var licenseFilePath = Path.Combine(AppContext.BaseDirectory, "license_key_IS404-100106341184");
+        if (!File.Exists(licenseFilePath))
+            licenseFilePath = "C:\\Users\\nepal\\OneDrive\\Desktop\\reading-the-reader-backend\\license_key_IS404-100106341184";
+
+        if (File.Exists(licenseFilePath))
         {
-            // Find all eye trackers
-            var trackers = await EyeTrackingOperations.FindAllEyeTrackersAsync();
-
-            if (trackers.Count == 0)
+            try
             {
-                Console.WriteLine("❌ No Eye Trackers found!");
-                return;
+                Console.WriteLine("🔑 License file found, applying Tobii license");
+                var licenseBytes = File.ReadAllBytes(licenseFilePath);
+                Console.WriteLine("🔑 License file read successfully, applying license to Tobii eye tracker");
+                var licenseKey = new LicenseKey(licenseBytes);
+                var licenseCollection = new LicenseCollection([licenseKey]);
+                _activeTracker.TryApplyLicenses(licenseCollection, out var result);
+                bool valid = result[0].ValidationResult == LicenseValidationResult.Ok;
+                Console.WriteLine(valid
+                    ? "✅ Tobii license applied successfully"
+                    : "⚠️  Tobii license validation failed, continuing without license");
             }
-
-            _currentTracker = trackers[0];
-            Console.WriteLine($"✅ Found {trackers.Count} tracker(s)");
-            Console.WriteLine($"📱 Using Tobii Tracker: '{_currentTracker.Address}'");
-            Console.WriteLine($"   - Device Name: {_currentTracker.DeviceName}");
-            Console.WriteLine($"   - Serial Number: {_currentTracker.SerialNumber}");
-            Console.WriteLine($"   - Model: {_currentTracker.Model}");
-
-            // Apply license
-            await ApplyLicense(_currentTracker);
-
-            // Subscribe to gaze data events
-            _currentTracker.GazeDataReceived += OnGazeDataReceived;
-
-            // Start gaze data collection
-            Console.WriteLine("🎯 Starting gaze data collection...");
-            _isTracking = true;
-
-            Console.WriteLine("📊 Eye tracking is now active. Gaze data will be logged below:");
-            Console.WriteLine("" + new string('=', 80));
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"❌ Error starting eye tracking: {ex.Message}");
-            Console.WriteLine($"Stack trace: {ex.StackTrace}");
-        }
-    }
-
-    private async Task ApplyLicense(IEyeTracker tracker)
-    {
-        try
-        {
-            // Look for license file in the root directory
-            var rootPath = Directory.GetCurrentDirectory();
-            while (!File.Exists(Path.Combine(rootPath, "liscence")) && Directory.GetParent(rootPath) != null)
+            catch (Exception ex)
             {
-                rootPath = Directory.GetParent(rootPath)!.FullName;
-            }
-
-            var licenseFilePath = Path.Combine(rootPath, "liscence");
-
-            Console.WriteLine($"🔑 Looking for license file at: {licenseFilePath}");
-
-            if (!File.Exists(licenseFilePath))
-            {
-                Console.WriteLine("⚠️  License file 'liscence' not found - continuing without license");
-                return;
-            }
-
-            var licenseBytes = File.ReadAllBytes(licenseFilePath);
-            Console.WriteLine($"✅ Successfully read license file ({licenseBytes.Length} bytes)");
-
-            // Apply the license using Tobii Research API
-            LicenseKey licenseKey = new LicenseKey(licenseBytes);
-            LicenseCollection licenseCollection = new LicenseCollection(new[] { licenseKey });
-
-            tracker.TryApplyLicenses(licenseCollection, out var results);
-
-            if (results.Length > 0)
-            {
-                bool isValid = results[0].ValidationResult == LicenseValidationResult.Ok;
-                if (isValid)
-                {
-                    Console.WriteLine("✅ License successfully applied and validated");
-                }
-                else
-                {
-                    Console.WriteLine($"❌ License application failed: {results[0].ValidationResult}");
-                }
-            }
-            else
-            {
-                Console.WriteLine("⚠️  No license validation results returned");
+                Console.WriteLine($"⚠️  Could not apply license: {ex.Message}");
             }
         }
-        catch (FileNotFoundException)
+        else
         {
-            Console.WriteLine("⚠️  License file 'liscence' not found - continuing without license");
+            Console.WriteLine("ℹ️  No license file found, continuing without license");
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"❌ Error applying license: {ex.Message}");
-            Console.WriteLine("⚠️  Continuing without license...");
-        }
-    }
 
-    private void OnGazeDataReceived(object? sender, GazeDataEventArgs e)
-    {
-        if (!_isTracking) return;
-
-        var gazeData = e.GazeData;
-
-        Console.WriteLine($"👁️  GAZE DATA [{DateTime.Now:HH:mm:ss.fff}]");
-        Console.WriteLine($"   ⏱️  Device Timestamp: {gazeData.DeviceTimeStamp}");
-        Console.WriteLine($"   🔄 System Timestamp: {gazeData.SystemTimeStamp}");
-
-        // Left Eye Data
-        Console.WriteLine($"   👁️  LEFT EYE:");
-        Console.WriteLine($"      📍 Gaze Point: ({gazeData.LeftEye.GazePoint.PositionOnDisplayArea.X:F4}, {gazeData.LeftEye.GazePoint.PositionOnDisplayArea.Y:F4})");
-        Console.WriteLine($"      ✅ Gaze Validity: {gazeData.LeftEye.GazePoint.Validity}");
-        Console.WriteLine($"      👤 Pupil Diameter: {gazeData.LeftEye.Pupil.PupilDiameter:F2} mm");
-        Console.WriteLine($"      ✅ Pupil Validity: {gazeData.LeftEye.Pupil.Validity}");
-        Console.WriteLine($"      📐 Gaze Origin: ({gazeData.LeftEye.GazeOrigin.PositionInUserCoordinates.X:F2}, {gazeData.LeftEye.GazeOrigin.PositionInUserCoordinates.Y:F2}, {gazeData.LeftEye.GazeOrigin.PositionInUserCoordinates.Z:F2})");
-        Console.WriteLine($"      ✅ Origin Validity: {gazeData.LeftEye.GazeOrigin.Validity}");
-
-        // Right Eye Data
-        Console.WriteLine($"   👁️  RIGHT EYE:");
-        Console.WriteLine($"      📍 Gaze Point: ({gazeData.RightEye.GazePoint.PositionOnDisplayArea.X:F4}, {gazeData.RightEye.GazePoint.PositionOnDisplayArea.Y:F4})");
-        Console.WriteLine($"      ✅ Gaze Validity: {gazeData.RightEye.GazePoint.Validity}");
-        Console.WriteLine($"      👤 Pupil Diameter: {gazeData.RightEye.Pupil.PupilDiameter:F2} mm");
-        Console.WriteLine($"      ✅ Pupil Validity: {gazeData.RightEye.Pupil.Validity}");
-        Console.WriteLine($"      📐 Gaze Origin: ({gazeData.RightEye.GazeOrigin.PositionInUserCoordinates.X:F2}, {gazeData.RightEye.GazeOrigin.PositionInUserCoordinates.Y:F2}, {gazeData.RightEye.GazeOrigin.PositionInUserCoordinates.Z:F2})");
-        Console.WriteLine($"      ✅ Origin Validity: {gazeData.RightEye.GazeOrigin.Validity}");
-
-        Console.WriteLine("" + new string('-', 80));
+        _activeTracker.GazeDataReceived += OnTobiiGazeDataReceived;
+        Console.WriteLine($"✅ Tobii eye tracking started on '{_activeTracker.Address}'");
+        return Task.CompletedTask;
     }
 
     public void StopEyeTracking()
     {
-        if (_currentTracker != null && _isTracking)
+        if (_activeTracker is null) return;
+        _activeTracker.GazeDataReceived -= OnTobiiGazeDataReceived;
+        _activeTracker = null;
+        Console.WriteLine("🛑 Tobii eye tracking stopped");
+    }
+
+    private void OnTobiiGazeDataReceived(object? sender, GazeDataEventArgs e)
+    {
+        Console.WriteLine(
+            $"Gaze: ts={e.DeviceTimeStamp} " +
+            $"L=({e.LeftEye.GazePoint.PositionOnDisplayArea.X:F3},{e.LeftEye.GazePoint.PositionOnDisplayArea.Y:F3}) " +
+            $"R=({e.RightEye.GazePoint.PositionOnDisplayArea.X:F3},{e.RightEye.GazePoint.PositionOnDisplayArea.Y:F3}) " +
+            $"LValid={e.LeftEye.GazePoint.Validity} RValid={e.RightEye.GazePoint.Validity}");
+
+        GazeDataReceived?.Invoke(this, new GazeData
         {
-            Console.WriteLine("🛑 Stopping eye tracking...");
-            _currentTracker.GazeDataReceived -= OnGazeDataReceived;
-            _isTracking = false;
-            Console.WriteLine("✅ Eye tracking stopped successfully");
-        }
+            DeviceTimeStamp  = e.DeviceTimeStamp,
+            LeftEyeX         = e.LeftEye.GazePoint.PositionOnDisplayArea.X,
+            LeftEyeY         = e.LeftEye.GazePoint.PositionOnDisplayArea.Y,
+            LeftEyeValidity  = e.LeftEye.GazePoint.Validity.ToString(),
+            RightEyeX        = e.RightEye.GazePoint.PositionOnDisplayArea.X,
+            RightEyeY        = e.RightEye.GazePoint.PositionOnDisplayArea.Y,
+            RightEyeValidity = e.RightEye.GazePoint.Validity.ToString()
+        });
     }
 
 #else
-    // Mock implementation for non-Windows platforms
-    public async Task<List<EyeTrackerDevice>> GetAllConnectedEyeTrackers()
+    // Mock implementation — Tobii SDK is Windows-only, not available on macOS
+
+    public Task<List<EyeTrackerDevice>> GetAllConnectedEyeTrackers()
     {
-        await Task.Delay(100); // Simulate async operation
-        return new List<EyeTrackerDevice>
+        return Task.FromResult(new List<EyeTrackerDevice>
         {
             new EyeTrackerDevice
             {
@@ -179,15 +109,14 @@ public class TobiiEyeTrackerManager : IEyeTrackerManager
                 SerialNumber = "MOCK-001",
                 Model = "Tobii Pro X3-120"
             }
-        };
+        });
     }
 
-    public async Task StartEyeTracking()
+    public Task StartEyeTracking()
     {
-        Console.WriteLine("=== Mock Eye Tracker Manager - Starting Eye Tracking ===");
-        Console.WriteLine("⚠️  Running on non-Windows platform - using mock implementation");
-        await Task.Delay(100);
-        Console.WriteLine("✅ Mock eye tracking started successfully");
+        Console.WriteLine("⚠️  Tobii SDK not available on this platform — running mock eye tracker");
+        Console.WriteLine("✅ Mock eye tracking started");
+        return Task.CompletedTask;
     }
 
     public void StopEyeTracking()
