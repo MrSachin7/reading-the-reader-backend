@@ -6,4 +6,7 @@ public interface IEyeTrackerManager {
 
     Task<List<EyeTrackerDevice>> GetAllConnectedEyeTrackers();
 
+    Task StartEyeTracking();
+
+    void StopEyeTracking();
 }
