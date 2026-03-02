@@ -1,0 +1,218 @@
+using System.Text.Json;
+using ReadingTheReader.core.Application.InfrastructureContracts;
+using ReadingTheReader.core.Domain;
+
+namespace ReadingTheReader.core.Application.ApplicationContracts.Realtime;
+
+public sealed class ExperimentSessionManager : IExperimentSessionManager
+{
+    private readonly IEyeTrackerManager _eyeTrackerManager;
+    private readonly IClientBroadcaster _clientBroadcaster;
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
+
+    private int _isSubscribed;
+    private long _receivedGazeSamples;
+    private GazeData? _latestGazeSample;
+    private ExperimentSession _session = ExperimentSession.Inactive;
+
+    public ExperimentSessionManager(IEyeTrackerManager eyeTrackerManager, IClientBroadcaster clientBroadcaster)
+    {
+        _eyeTrackerManager = eyeTrackerManager;
+        _clientBroadcaster = clientBroadcaster;
+    }
+
+    public async Task<bool> StartSessionAsync(CancellationToken ct = default)
+    {
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            var current = Volatile.Read(ref _session);
+            if (current.IsActive)
+            {
+                return false;
+            }
+
+            if (Interlocked.Exchange(ref _isSubscribed, 1) == 0)
+            {
+                _eyeTrackerManager.GazeDataReceived += OnGazeDataReceived;
+            }
+
+            try
+            {
+                await _eyeTrackerManager.StartEyeTracking();
+            }
+            catch
+            {
+                if (Interlocked.Exchange(ref _isSubscribed, 0) == 1)
+                {
+                    _eyeTrackerManager.GazeDataReceived -= OnGazeDataReceived;
+                }
+
+                throw;
+            }
+
+            Interlocked.Exchange(ref _receivedGazeSamples, 0);
+            Volatile.Write(ref _latestGazeSample, null);
+
+            var startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            Volatile.Write(ref _session, ExperimentSession.StartNew(startedAt));
+
+            await _clientBroadcaster.BroadcastAsync(MessageTypes.ExperimentStarted, GetCurrentSnapshot(), ct);
+            return true;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    public async Task<bool> StopSessionAsync(CancellationToken ct = default)
+    {
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            var current = Volatile.Read(ref _session);
+            if (!current.IsActive)
+            {
+                return false;
+            }
+
+            Volatile.Write(ref _session, current.Stop(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+
+            _eyeTrackerManager.StopEyeTracking();
+
+            if (Interlocked.Exchange(ref _isSubscribed, 0) == 1)
+            {
+                _eyeTrackerManager.GazeDataReceived -= OnGazeDataReceived;
+            }
+
+            await _clientBroadcaster.BroadcastAsync(MessageTypes.ExperimentStopped, GetCurrentSnapshot(), ct);
+            return true;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    public void UpdateGazeSample(GazeData gazeData)
+    {
+        Interlocked.Increment(ref _receivedGazeSamples);
+        Volatile.Write(ref _latestGazeSample, gazeData);
+    }
+
+    public ExperimentSessionSnapshot GetCurrentSnapshot()
+    {
+        var session = Volatile.Read(ref _session);
+        var latest = Volatile.Read(ref _latestGazeSample);
+
+        return new ExperimentSessionSnapshot(
+            session.Id,
+            session.IsActive,
+            session.StartedAtUnixMs,
+            session.StoppedAtUnixMs,
+            Interlocked.Read(ref _receivedGazeSamples),
+            latest is null ? null : CloneGaze(latest),
+            _clientBroadcaster.ConnectedClients
+        );
+    }
+
+    public async Task HandleInboundMessageAsync(string connectionId, string messageType, JsonElement payload, CancellationToken ct = default)
+    {
+        switch (messageType)
+        {
+            case MessageTypes.Ping:
+                await _clientBroadcaster.SendToClientAsync(connectionId, MessageTypes.Pong, new
+                {
+                    serverTimeUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                }, ct);
+                break;
+
+            case MessageTypes.StartExperiment:
+                await StartSessionAsync(ct);
+                break;
+
+            case MessageTypes.StopExperiment:
+                await StopSessionAsync(ct);
+                break;
+
+            case MessageTypes.GetExperimentState:
+                await _clientBroadcaster.SendToClientAsync(connectionId, MessageTypes.ExperimentState, GetCurrentSnapshot(), ct);
+                break;
+
+            case MessageTypes.ResearcherCommand:
+                if (payload.ValueKind == JsonValueKind.Object &&
+                    payload.TryGetProperty("command", out var command) &&
+                    command.ValueKind == JsonValueKind.String)
+                {
+                    var commandValue = command.GetString();
+                    if (string.Equals(commandValue, MessageTypes.StartExperiment, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await StartSessionAsync(ct);
+                        return;
+                    }
+
+                    if (string.Equals(commandValue, MessageTypes.StopExperiment, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await StopSessionAsync(ct);
+                        return;
+                    }
+                }
+
+                await _clientBroadcaster.SendToClientAsync(connectionId, MessageTypes.Error, new
+                {
+                    message = "Unsupported researcher command"
+                }, ct);
+                break;
+
+            default:
+                await _clientBroadcaster.SendToClientAsync(connectionId, MessageTypes.Error, new
+                {
+                    message = $"Unsupported message type '{messageType}'"
+                }, ct);
+                break;
+        }
+    }
+
+    private void OnGazeDataReceived(object? sender, GazeData gazeData)
+    {
+        var session = Volatile.Read(ref _session);
+        if (!session.IsActive)
+        {
+            return;
+        }
+
+        UpdateGazeSample(gazeData);
+        var sendTask = _clientBroadcaster.BroadcastAsync(MessageTypes.GazeSample, gazeData);
+        if (!sendTask.IsCompletedSuccessfully)
+        {
+            _ = IgnoreFailuresAsync(sendTask.AsTask());
+        }
+    }
+
+    private static async Task IgnoreFailuresAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch
+        {
+            // Keep gaze ingestion non-blocking.
+        }
+    }
+
+    private static GazeData CloneGaze(GazeData source)
+    {
+        return new GazeData
+        {
+            DeviceTimeStamp = source.DeviceTimeStamp,
+            LeftEyeX = source.LeftEyeX,
+            LeftEyeY = source.LeftEyeY,
+            LeftEyeValidity = source.LeftEyeValidity,
+            RightEyeX = source.RightEyeX,
+            RightEyeY = source.RightEyeY,
+            RightEyeValidity = source.RightEyeValidity
+        };
+    }
+}

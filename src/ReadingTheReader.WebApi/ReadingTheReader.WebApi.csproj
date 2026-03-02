@@ -15,6 +15,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\core\ReadingTheReader.core.Application\ReadingTheReader.core.Application.csproj"/>
+        <ProjectReference Include="..\infrastructure\ReadingTheReader.Realtime.Persistence\ReadingTheReader.Realtime.Persistence.csproj" />
         <ProjectReference Include="..\infrastructure\ReadingTheReader.RealtimeMessenger\ReadingTheReader.RealtimeMessenger.csproj"/>
         <ProjectReference Include="..\infrastructure\ReadingTheReader.TobiiEyetracker\ReadingTheReader.TobiiEyetracker.csproj" />
     </ItemGroup>

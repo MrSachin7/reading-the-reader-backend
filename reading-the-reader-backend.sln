@@ -20,6 +20,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReadingTheReader.RealtimeMe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReadingTheReader.TobiiEyetracker", "src\infrastructure\ReadingTheReader.TobiiEyetracker\ReadingTheReader.TobiiEyetracker.csproj", "{B4BFDFC4-AB4D-49C5-9443-26F57F3A2444}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReadingTheReader.Realtime.Persistence", "src\infrastructure\ReadingTheReader.Realtime.Persistence\ReadingTheReader.Realtime.Persistence.csproj", "{999D8829-8E12-4AD1-BD7C-EB7EEF77966F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{1E92DD72-4701-43CE-A7DD-8EE01E58653D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Documentations", "docs\Documentations\Documentations.csproj", "{9594DB08-998B-4DAA-AD8D-BD84AAF3F380}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -46,6 +52,14 @@ Global
 		{B4BFDFC4-AB4D-49C5-9443-26F57F3A2444}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B4BFDFC4-AB4D-49C5-9443-26F57F3A2444}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B4BFDFC4-AB4D-49C5-9443-26F57F3A2444}.Release|Any CPU.Build.0 = Release|Any CPU
+		{999D8829-8E12-4AD1-BD7C-EB7EEF77966F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{999D8829-8E12-4AD1-BD7C-EB7EEF77966F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{999D8829-8E12-4AD1-BD7C-EB7EEF77966F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{999D8829-8E12-4AD1-BD7C-EB7EEF77966F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9594DB08-998B-4DAA-AD8D-BD84AAF3F380}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9594DB08-998B-4DAA-AD8D-BD84AAF3F380}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9594DB08-998B-4DAA-AD8D-BD84AAF3F380}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9594DB08-998B-4DAA-AD8D-BD84AAF3F380}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{149B6E42-3350-40B3-9129-37E523C5C379} = {D8C55EFF-4B25-4861-9999-94C38CD8EE61}
@@ -55,5 +69,7 @@ Global
 		{F5234AB1-0E6E-414C-B961-BA29D59FAE02} = {5CAAEBBC-96BD-4A24-8AB3-52243671200B}
 		{D34ED157-B099-411C-A470-2D99E4BC981F} = {AB1EF778-341A-485C-9208-5DF8549574B6}
 		{B4BFDFC4-AB4D-49C5-9443-26F57F3A2444} = {AB1EF778-341A-485C-9208-5DF8549574B6}
+		{999D8829-8E12-4AD1-BD7C-EB7EEF77966F} = {AB1EF778-341A-485C-9208-5DF8549574B6}
+		{9594DB08-998B-4DAA-AD8D-BD84AAF3F380} = {1E92DD72-4701-43CE-A7DD-8EE01E58653D}
 	EndGlobalSection
 EndGlobal

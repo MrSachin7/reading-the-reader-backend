@@ -1,7 +1,7 @@
 #if WINDOWS
 using Tobii.Research;
 #endif
-using ReadingTheReader.core.Application.ApplicationContracts.EyeTracker;
+using ReadingTheReader.core.Application.InfrastructureContracts;
 using ReadingTheReader.core.Domain;
 
 namespace ReadingTheReader.TobiiEyetracker;

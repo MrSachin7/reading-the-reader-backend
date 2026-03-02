@@ -1,6 +1,6 @@
 using ReadingTheReader.core.Domain;
 
-namespace ReadingTheReader.core.Application.ApplicationContracts.EyeTracker;
+namespace ReadingTheReader.core.Application.InfrastructureContracts;
 
 public interface IEyeTrackerManager
 {
