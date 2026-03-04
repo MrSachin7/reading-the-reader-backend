@@ -1,6 +1,7 @@
-namespace ReadingTheReader.core.Domain;
+namespace ReadingTheReader.WebApi.Contracts.Participants;
 
-public class Participant {
+public sealed class SaveParticipantRequest
+{
     public required string Name { get; set; }
     public int Age { get; set; }
     public required string Sex { get; set; }
