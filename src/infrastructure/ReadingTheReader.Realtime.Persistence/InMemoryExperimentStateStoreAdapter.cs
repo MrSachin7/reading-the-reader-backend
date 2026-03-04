@@ -34,6 +34,7 @@ public sealed class InMemoryExperimentStateStoreAdapter : IExperimentStateStoreA
             source.IsActive,
             source.StartedAtUnixMs,
             source.StoppedAtUnixMs,
+            source.Participant is null ? null : CloneParticipant(source.Participant),
             source.ReceivedGazeSamples,
             source.LatestGazeSample is null ? null : CloneGaze(source.LatestGazeSample),
             source.ConnectedClients
@@ -51,6 +52,18 @@ public sealed class InMemoryExperimentStateStoreAdapter : IExperimentStateStoreA
             RightEyeX = source.RightEyeX,
             RightEyeY = source.RightEyeY,
             RightEyeValidity = source.RightEyeValidity
+        };
+    }
+
+    private static Participant CloneParticipant(Participant source)
+    {
+        return new Participant
+        {
+            Name = source.Name,
+            Age = source.Age,
+            Sex = source.Sex,
+            ExistingEyeCondition = source.ExistingEyeCondition,
+            ReadingProficiency = source.ReadingProficiency
         };
     }
 }

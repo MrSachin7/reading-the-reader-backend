@@ -5,6 +5,8 @@ namespace ReadingTheReader.core.Application.ApplicationContracts.Realtime;
 
 public interface IExperimentSessionManager
 {
+    ValueTask SetCurrentParticipantAsync(Participant participant, CancellationToken ct = default);
+
     Task<bool> StartSessionAsync(CancellationToken ct = default);
 
     Task<bool> StopSessionAsync(CancellationToken ct = default);

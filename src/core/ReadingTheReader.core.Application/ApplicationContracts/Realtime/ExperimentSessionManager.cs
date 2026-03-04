@@ -8,6 +8,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
 {
     private readonly IEyeTrackerAdapter _eyeTrackerAdapter;
     private readonly IClientBroadcasterAdapter _clientBroadcasterAdapter;
+    private readonly IExperimentStateStoreAdapter _experimentStateStoreAdapter;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
     private int _isSubscribed;
@@ -15,10 +16,33 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
     private GazeData? _latestGazeSample;
     private ExperimentSession _session = ExperimentSession.Inactive;
 
-    public ExperimentSessionManager(IEyeTrackerAdapter eyeTrackerAdapter, IClientBroadcasterAdapter clientBroadcasterAdapter)
+    public ExperimentSessionManager(
+        IEyeTrackerAdapter eyeTrackerAdapter,
+        IClientBroadcasterAdapter clientBroadcasterAdapter,
+        IExperimentStateStoreAdapter experimentStateStoreAdapter)
     {
         _eyeTrackerAdapter = eyeTrackerAdapter;
         _clientBroadcasterAdapter = clientBroadcasterAdapter;
+        _experimentStateStoreAdapter = experimentStateStoreAdapter;
+    }
+
+    public async ValueTask SetCurrentParticipantAsync(Participant participant, CancellationToken ct = default)
+    {
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            var current = Volatile.Read(ref _session);
+            var participantCopy = CloneParticipant(participant);
+            Volatile.Write(ref _session, current with { Participant = participantCopy });
+
+            var snapshot = GetCurrentSnapshot();
+            await _experimentStateStoreAdapter.SaveSnapshotAsync(snapshot, ct);
+            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ExperimentState, snapshot, ct);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
     }
 
     public async Task<bool> StartSessionAsync(CancellationToken ct = default)
@@ -55,9 +79,11 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             Volatile.Write(ref _latestGazeSample, null);
 
             var startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            Volatile.Write(ref _session, ExperimentSession.StartNew(startedAt));
+            Volatile.Write(ref _session, ExperimentSession.StartNew(startedAt, current.Participant));
 
-            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ExperimentStarted, GetCurrentSnapshot(), ct);
+            var snapshot = GetCurrentSnapshot();
+            await _experimentStateStoreAdapter.SaveSnapshotAsync(snapshot, ct);
+            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ExperimentStarted, snapshot, ct);
             return true;
         }
         finally
@@ -86,7 +112,9 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
                 _eyeTrackerAdapter.GazeDataReceived -= OnGazeDataReceived;
             }
 
-            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ExperimentStopped, GetCurrentSnapshot(), ct);
+            var snapshot = GetCurrentSnapshot();
+            await _experimentStateStoreAdapter.SaveSnapshotAsync(snapshot, ct);
+            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ExperimentStopped, snapshot, ct);
             return true;
         }
         finally
@@ -111,6 +139,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             session.IsActive,
             session.StartedAtUnixMs,
             session.StoppedAtUnixMs,
+            session.Participant is null ? null : CloneParticipant(session.Participant),
             Interlocked.Read(ref _receivedGazeSamples),
             latest is null ? null : CloneGaze(latest),
             _clientBroadcasterAdapter.ConnectedClients
@@ -213,6 +242,18 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             RightEyeX = source.RightEyeX,
             RightEyeY = source.RightEyeY,
             RightEyeValidity = source.RightEyeValidity
+        };
+    }
+
+    private static Participant CloneParticipant(Participant source)
+    {
+        return new Participant
+        {
+            Name = source.Name,
+            Age = source.Age,
+            Sex = source.Sex,
+            ExistingEyeCondition = source.ExistingEyeCondition,
+            ReadingProficiency = source.ReadingProficiency
         };
     }
 }

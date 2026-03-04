@@ -7,6 +7,7 @@ public sealed record ExperimentSessionSnapshot(
     bool IsActive,
     long StartedAtUnixMs,
     long? StoppedAtUnixMs,
+    Participant? Participant,
     long ReceivedGazeSamples,
     GazeData? LatestGazeSample,
     int ConnectedClients
