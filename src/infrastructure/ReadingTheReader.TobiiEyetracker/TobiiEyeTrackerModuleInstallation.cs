@@ -6,7 +6,7 @@ namespace ReadingTheReader.TobiiEyetracker;
 public static class TobiiEyeTrackerModuleInstallation {
 
     public static IServiceCollection InstallTobiiEyeTrackerModule(this IServiceCollection collection) {
-        collection.AddSingleton<IEyeTrackerManager, TobiiEyeTrackerManager>();
+        collection.AddSingleton<IEyeTrackerAdapter, TobiiEyeTrackerAdapter>();
         return collection;
     }
 }

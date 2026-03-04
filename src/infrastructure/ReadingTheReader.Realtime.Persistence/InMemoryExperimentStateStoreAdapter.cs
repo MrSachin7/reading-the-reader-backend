@@ -4,7 +4,7 @@ using ReadingTheReader.core.Domain;
 
 namespace ReadingTheReader.Realtime.Persistence;
 
-public sealed class InMemoryExperimentStateStore : IExperimentStateStore
+public sealed class InMemoryExperimentStateStoreAdapter : IExperimentStateStoreAdapter
 {
     private readonly object _gate = new();
     private ExperimentSessionSnapshot? _latest;

@@ -5,11 +5,11 @@ namespace ReadingTheReader.WebApi.EyeTrackerEndpoints;
 
 public class StopTrackingEndpoint : EndpointWithoutRequest
 {
-    private readonly IEyeTrackerPublisher _eyeTrackerPublisher;
+    private readonly IEyeTrackerService _eyeTrackerService;
 
-    public StopTrackingEndpoint(IEyeTrackerPublisher eyeTrackerPublisher)
+    public StopTrackingEndpoint(IEyeTrackerService eyeTrackerService)
     {
-        _eyeTrackerPublisher = eyeTrackerPublisher;
+        _eyeTrackerService = eyeTrackerService;
     }
 
     public override void Configure()
@@ -20,7 +20,7 @@ public class StopTrackingEndpoint : EndpointWithoutRequest
 
     public override async Task HandleAsync(CancellationToken ct)
     {
-        await _eyeTrackerPublisher.StopTrackingAsync(ct);
+        await _eyeTrackerService.StopTrackingAsync(ct);
         await Send.OkAsync(cancellation: ct);
     }
 }

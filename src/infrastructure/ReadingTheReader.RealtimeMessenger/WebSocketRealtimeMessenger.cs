@@ -5,7 +5,7 @@ using ReadingTheReader.core.Application.InfrastructureContracts;
 
 namespace ReadingTheReader.RealtimeMessenger;
 
-public sealed class WebSocketRealtimeMessenger : IClientBroadcaster
+public sealed class WebSocketRealtimeMessenger : IClientBroadcasterAdapter
 {
     private readonly WebSocketConnectionManager _connections;
     private readonly JsonSerializerOptions _jsonOptions = new()

@@ -6,8 +6,8 @@ namespace ReadingTheReader.core.Application.ApplicationContracts.Realtime;
 
 public sealed class ExperimentSessionManager : IExperimentSessionManager
 {
-    private readonly IEyeTrackerManager _eyeTrackerManager;
-    private readonly IClientBroadcaster _clientBroadcaster;
+    private readonly IEyeTrackerAdapter _eyeTrackerAdapter;
+    private readonly IClientBroadcasterAdapter _clientBroadcasterAdapter;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
     private int _isSubscribed;
@@ -15,10 +15,10 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
     private GazeData? _latestGazeSample;
     private ExperimentSession _session = ExperimentSession.Inactive;
 
-    public ExperimentSessionManager(IEyeTrackerManager eyeTrackerManager, IClientBroadcaster clientBroadcaster)
+    public ExperimentSessionManager(IEyeTrackerAdapter eyeTrackerAdapter, IClientBroadcasterAdapter clientBroadcasterAdapter)
     {
-        _eyeTrackerManager = eyeTrackerManager;
-        _clientBroadcaster = clientBroadcaster;
+        _eyeTrackerAdapter = eyeTrackerAdapter;
+        _clientBroadcasterAdapter = clientBroadcasterAdapter;
     }
 
     public async Task<bool> StartSessionAsync(CancellationToken ct = default)
@@ -34,18 +34,18 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
 
             if (Interlocked.Exchange(ref _isSubscribed, 1) == 0)
             {
-                _eyeTrackerManager.GazeDataReceived += OnGazeDataReceived;
+                _eyeTrackerAdapter.GazeDataReceived += OnGazeDataReceived;
             }
 
             try
             {
-                await _eyeTrackerManager.StartEyeTracking();
+                await _eyeTrackerAdapter.StartEyeTracking();
             }
             catch
             {
                 if (Interlocked.Exchange(ref _isSubscribed, 0) == 1)
                 {
-                    _eyeTrackerManager.GazeDataReceived -= OnGazeDataReceived;
+                    _eyeTrackerAdapter.GazeDataReceived -= OnGazeDataReceived;
                 }
 
                 throw;
@@ -57,7 +57,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             var startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             Volatile.Write(ref _session, ExperimentSession.StartNew(startedAt));
 
-            await _clientBroadcaster.BroadcastAsync(MessageTypes.ExperimentStarted, GetCurrentSnapshot(), ct);
+            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ExperimentStarted, GetCurrentSnapshot(), ct);
             return true;
         }
         finally
@@ -79,14 +79,14 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
 
             Volatile.Write(ref _session, current.Stop(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
 
-            _eyeTrackerManager.StopEyeTracking();
+            _eyeTrackerAdapter.StopEyeTracking();
 
             if (Interlocked.Exchange(ref _isSubscribed, 0) == 1)
             {
-                _eyeTrackerManager.GazeDataReceived -= OnGazeDataReceived;
+                _eyeTrackerAdapter.GazeDataReceived -= OnGazeDataReceived;
             }
 
-            await _clientBroadcaster.BroadcastAsync(MessageTypes.ExperimentStopped, GetCurrentSnapshot(), ct);
+            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ExperimentStopped, GetCurrentSnapshot(), ct);
             return true;
         }
         finally
@@ -113,7 +113,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             session.StoppedAtUnixMs,
             Interlocked.Read(ref _receivedGazeSamples),
             latest is null ? null : CloneGaze(latest),
-            _clientBroadcaster.ConnectedClients
+            _clientBroadcasterAdapter.ConnectedClients
         );
     }
 
@@ -122,7 +122,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         switch (messageType)
         {
             case MessageTypes.Ping:
-                await _clientBroadcaster.SendToClientAsync(connectionId, MessageTypes.Pong, new
+                await _clientBroadcasterAdapter.SendToClientAsync(connectionId, MessageTypes.Pong, new
                 {
                     serverTimeUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 }, ct);
@@ -137,7 +137,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
                 break;
 
             case MessageTypes.GetExperimentState:
-                await _clientBroadcaster.SendToClientAsync(connectionId, MessageTypes.ExperimentState, GetCurrentSnapshot(), ct);
+                await _clientBroadcasterAdapter.SendToClientAsync(connectionId, MessageTypes.ExperimentState, GetCurrentSnapshot(), ct);
                 break;
 
             case MessageTypes.ResearcherCommand:
@@ -159,14 +159,14 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
                     }
                 }
 
-                await _clientBroadcaster.SendToClientAsync(connectionId, MessageTypes.Error, new
+                await _clientBroadcasterAdapter.SendToClientAsync(connectionId, MessageTypes.Error, new
                 {
                     message = "Unsupported researcher command"
                 }, ct);
                 break;
 
             default:
-                await _clientBroadcaster.SendToClientAsync(connectionId, MessageTypes.Error, new
+                await _clientBroadcasterAdapter.SendToClientAsync(connectionId, MessageTypes.Error, new
                 {
                     message = $"Unsupported message type '{messageType}'"
                 }, ct);
@@ -183,7 +183,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         }
 
         UpdateGazeSample(gazeData);
-        var sendTask = _clientBroadcaster.BroadcastAsync(MessageTypes.GazeSample, gazeData);
+        var sendTask = _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.GazeSample, gazeData);
         if (!sendTask.IsCompletedSuccessfully)
         {
             _ = IgnoreFailuresAsync(sendTask.AsTask());

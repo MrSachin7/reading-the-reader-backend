@@ -23,7 +23,7 @@ public static class WebSocketConfiguration
     {
         services.AddSingleton<WebSocketConnectionManager>();
         services.AddSingleton<WebSocketRealtimeMessenger>();
-        services.AddSingleton<IClientBroadcaster>(sp => sp.GetRequiredService<WebSocketRealtimeMessenger>());
+        services.AddSingleton<IClientBroadcasterAdapter>(sp => sp.GetRequiredService<WebSocketRealtimeMessenger>());
 
         return services;
     }

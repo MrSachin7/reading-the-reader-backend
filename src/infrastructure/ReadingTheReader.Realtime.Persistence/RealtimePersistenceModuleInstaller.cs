@@ -15,13 +15,14 @@ public static class RealtimePersistenceModuleInstaller
 
         if (string.Equals(options.Provider, "File", StringComparison.OrdinalIgnoreCase))
         {
-            services.AddSingleton<IExperimentStateStore>(_ => new FileSnapshotExperimentStateStore(options.SnapshotFilePath));
+            services.AddSingleton<IExperimentStateStoreAdapter>(_ => new FileSnapshotExperimentStateStoreAdapter(options.SnapshotFilePath));
         }
         else
         {
-            services.AddSingleton<IExperimentStateStore, InMemoryExperimentStateStore>();
+            services.AddSingleton<IExperimentStateStoreAdapter, InMemoryExperimentStateStoreAdapter>();
         }
 
+        services.AddSingleton<IEyeTrackerLicenseStoreAdapter, FileEyeTrackerLicenseStoreAdapter>();
         services.AddHostedService<ExperimentStateCheckpointWorker>();
 
         return services;

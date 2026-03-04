@@ -1,6 +1,6 @@
 namespace ReadingTheReader.core.Application.InfrastructureContracts;
 
-public interface IClientBroadcaster
+public interface IClientBroadcasterAdapter
 {
     ValueTask BroadcastAsync<T>(string messageType, T payload, CancellationToken ct = default);
 

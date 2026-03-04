@@ -5,11 +5,11 @@ namespace ReadingTheReader.WebApi.EyeTrackerEndpoints;
 
 public class StartTrackingEndpoint : EndpointWithoutRequest
 {
-    private readonly IEyeTrackerPublisher _eyeTrackerPublisher;
+    private readonly IEyeTrackerService _eyeTrackerService;
 
-    public StartTrackingEndpoint(IEyeTrackerPublisher eyeTrackerPublisher)
+    public StartTrackingEndpoint(IEyeTrackerService eyeTrackerService)
     {
-        _eyeTrackerPublisher = eyeTrackerPublisher;
+        _eyeTrackerService = eyeTrackerService;
     }
 
     public override void Configure()
@@ -20,7 +20,17 @@ public class StartTrackingEndpoint : EndpointWithoutRequest
 
     public override async Task HandleAsync(CancellationToken ct)
     {
-        await _eyeTrackerPublisher.StartTrackingAsync(ct);
+        try
+        {
+            await _eyeTrackerService.StartTrackingAsync(ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await HttpContext.Response.WriteAsJsonAsync(new { message = ex.Message }, ct);
+            return;
+        }
+
         await Send.OkAsync(cancellation: ct);
     }
 }

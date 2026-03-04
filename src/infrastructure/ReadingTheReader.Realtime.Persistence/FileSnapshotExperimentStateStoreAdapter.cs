@@ -4,7 +4,7 @@ using ReadingTheReader.core.Application.InfrastructureContracts;
 
 namespace ReadingTheReader.Realtime.Persistence;
 
-public sealed class FileSnapshotExperimentStateStore : IExperimentStateStore
+public sealed class FileSnapshotExperimentStateStoreAdapter : IExperimentStateStoreAdapter
 {
     private readonly string _snapshotFilePath;
     private readonly JsonSerializerOptions _jsonOptions = new()
@@ -13,7 +13,7 @@ public sealed class FileSnapshotExperimentStateStore : IExperimentStateStore
         WriteIndented = false
     };
 
-    public FileSnapshotExperimentStateStore(string snapshotFilePath)
+    public FileSnapshotExperimentStateStoreAdapter(string snapshotFilePath)
     {
         _snapshotFilePath = snapshotFilePath;
     }

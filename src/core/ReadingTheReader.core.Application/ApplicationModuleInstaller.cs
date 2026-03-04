@@ -8,7 +8,7 @@ public static class ApplicationModuleInstaller
     public static IServiceCollection InstallApplicationModule(this IServiceCollection collection)
     {
         collection.AddSingleton<IExperimentSessionManager, ExperimentSessionManager>();
-        collection.AddSingleton<IEyeTrackerPublisher, EyeTrackerPublisher>();
+        collection.AddSingleton<IEyeTrackerService, EyeTrackerService>();
         return collection;
     }
 }
