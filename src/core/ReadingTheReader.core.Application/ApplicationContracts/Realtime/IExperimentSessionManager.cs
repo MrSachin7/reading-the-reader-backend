@@ -6,6 +6,8 @@ namespace ReadingTheReader.core.Application.ApplicationContracts.Realtime;
 public interface IExperimentSessionManager
 {
     ValueTask SetCurrentParticipantAsync(Participant participant, CancellationToken ct = default);
+    
+    ValueTask SetCurrentEyeTrackerAsync(EyeTrackerDevice eyeTrackerDevice, CancellationToken ct = default);
 
     Task<bool> StartSessionAsync(CancellationToken ct = default);
 

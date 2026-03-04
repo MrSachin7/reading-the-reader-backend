@@ -37,7 +37,24 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
 
             var snapshot = GetCurrentSnapshot();
             await _experimentStateStoreAdapter.SaveSnapshotAsync(snapshot, ct);
-            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ExperimentState, snapshot, ct);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+    
+    public async ValueTask SetCurrentEyeTrackerAsync(EyeTrackerDevice eyeTrackerDevice, CancellationToken ct = default)
+    {
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            var current = Volatile.Read(ref _session);
+            var eyeTrackerCopy = CloneEyeTrackerDevice(eyeTrackerDevice);
+            Volatile.Write(ref _session, current with { EyeTrackerDevice = eyeTrackerCopy });
+
+            var snapshot = GetCurrentSnapshot();
+            await _experimentStateStoreAdapter.SaveSnapshotAsync(snapshot, ct);
         }
         finally
         {
@@ -79,7 +96,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             Volatile.Write(ref _latestGazeSample, null);
 
             var startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            Volatile.Write(ref _session, ExperimentSession.StartNew(startedAt, current.Participant));
+            Volatile.Write(ref _session, ExperimentSession.StartNew(startedAt, current.Participant, current.EyeTrackerDevice));
 
             var snapshot = GetCurrentSnapshot();
             await _experimentStateStoreAdapter.SaveSnapshotAsync(snapshot, ct);
@@ -140,6 +157,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             session.StartedAtUnixMs,
             session.StoppedAtUnixMs,
             session.Participant is null ? null : CloneParticipant(session.Participant),
+            session.EyeTrackerDevice is null ? null : CloneEyeTrackerDevice(session.EyeTrackerDevice),
             Interlocked.Read(ref _receivedGazeSamples),
             latest is null ? null : CloneGaze(latest),
             _clientBroadcasterAdapter.ConnectedClients
@@ -254,6 +272,17 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             Sex = source.Sex,
             ExistingEyeCondition = source.ExistingEyeCondition,
             ReadingProficiency = source.ReadingProficiency
+        };
+    }
+
+    private static EyeTrackerDevice CloneEyeTrackerDevice(EyeTrackerDevice source)
+    {
+        return new EyeTrackerDevice
+        {
+            Name = source.Name,
+            Model = source.Model,
+            SerialNumber = source.SerialNumber,
+            HasSavedLicence = source.HasSavedLicence
         };
     }
 }

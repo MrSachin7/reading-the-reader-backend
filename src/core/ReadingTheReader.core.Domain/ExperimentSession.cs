@@ -5,13 +5,17 @@ public sealed record ExperimentSession(
     bool IsActive,
     long StartedAtUnixMs,
     long? StoppedAtUnixMs,
-    Participant? Participant = null)
+    Participant? Participant = null,
+    EyeTrackerDevice? EyeTrackerDevice = null)
 {
     public static ExperimentSession Inactive { get; } = new(null, false, 0, null);
 
-    public static ExperimentSession StartNew(long startedAtUnixMs, Participant? participant = null)
+    public static ExperimentSession StartNew(
+        long startedAtUnixMs,
+        Participant? participant = null,
+        EyeTrackerDevice? eyeTrackerDevice = null)
     {
-        return new ExperimentSession(Guid.NewGuid(), true, startedAtUnixMs, null, participant);
+        return new ExperimentSession(Guid.NewGuid(), true, startedAtUnixMs, null, participant, eyeTrackerDevice);
     }
 
     public ExperimentSession Stop(long stoppedAtUnixMs)

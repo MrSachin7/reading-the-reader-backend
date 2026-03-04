@@ -8,6 +8,7 @@ public sealed record ExperimentSessionSnapshot(
     long StartedAtUnixMs,
     long? StoppedAtUnixMs,
     Participant? Participant,
+    EyeTrackerDevice? EyeTrackerDevice,
     long ReceivedGazeSamples,
     GazeData? LatestGazeSample,
     int ConnectedClients

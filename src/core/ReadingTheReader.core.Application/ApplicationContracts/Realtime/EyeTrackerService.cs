@@ -56,6 +56,9 @@ public sealed class EyeTrackerService : IEyeTrackerService
         }
 
         await _eyeTrackerAdapter.SelectEyeTracker(serialNumber, effectiveLicenseBytes, ct);
+        
+        var selectedEyeTracker = await ResolveSelectedEyeTrackerAsync(serialNumber, ct);
+        await _sessionManager.SetCurrentEyeTrackerAsync(selectedEyeTracker, ct);
 
         if (saveLicence && hasUploadedLicense)
         {
@@ -71,5 +74,26 @@ public sealed class EyeTrackerService : IEyeTrackerService
     public Task StopTrackingAsync(CancellationToken ct = default)
     {
         return _sessionManager.StopSessionAsync(ct);
+    }
+
+    private async Task<EyeTrackerDevice> ResolveSelectedEyeTrackerAsync(string serialNumber, CancellationToken ct)
+    {
+        var trackers = await _eyeTrackerAdapter.GetAllConnectedEyeTrackers();
+        var selected = trackers.FirstOrDefault(t =>
+            t.SerialNumber.Equals(serialNumber, StringComparison.OrdinalIgnoreCase));
+
+        if (selected is not null)
+        {
+            selected.HasSavedLicence = await _licenseStoreAdapter.HasLicenseAsync(selected.SerialNumber, ct);
+            return selected;
+        }
+
+        return new EyeTrackerDevice
+        {
+            SerialNumber = serialNumber,
+            Name = serialNumber,
+            Model = string.Empty,
+            HasSavedLicence = await _licenseStoreAdapter.HasLicenseAsync(serialNumber, ct)
+        };
     }
 }

@@ -14,11 +14,12 @@ public sealed class InMemoryExperimentStateStoreAdapter : IExperimentStateStoreA
         lock (_gate)
         {
             _latest = Clone(snapshot);
+            Console.WriteLine($"Saving snapshot to InMemory : {_latest?.EyeTrackerDevice?.SerialNumber}, {_latest?.Participant?.ToString()}");
         }
 
         return ValueTask.CompletedTask;
     }
-
+        
     public ValueTask<ExperimentSessionSnapshot?> LoadLatestSnapshotAsync(CancellationToken ct = default)
     {
         lock (_gate)
@@ -35,6 +36,7 @@ public sealed class InMemoryExperimentStateStoreAdapter : IExperimentStateStoreA
             source.StartedAtUnixMs,
             source.StoppedAtUnixMs,
             source.Participant is null ? null : CloneParticipant(source.Participant),
+            source.EyeTrackerDevice is null ? null : CloneEyeTrackerDevice(source.EyeTrackerDevice),
             source.ReceivedGazeSamples,
             source.LatestGazeSample is null ? null : CloneGaze(source.LatestGazeSample),
             source.ConnectedClients
@@ -64,6 +66,17 @@ public sealed class InMemoryExperimentStateStoreAdapter : IExperimentStateStoreA
             Sex = source.Sex,
             ExistingEyeCondition = source.ExistingEyeCondition,
             ReadingProficiency = source.ReadingProficiency
+        };
+    }
+
+    private static EyeTrackerDevice CloneEyeTrackerDevice(EyeTrackerDevice source)
+    {
+        return new EyeTrackerDevice
+        {
+            Name = source.Name,
+            Model = source.Model,
+            SerialNumber = source.SerialNumber,
+            HasSavedLicence = source.HasSavedLicence
         };
     }
 }
