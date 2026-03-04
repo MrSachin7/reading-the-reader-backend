@@ -10,7 +10,11 @@ public sealed class FileEyeTrackerLicenseStoreAdapter : IEyeTrackerLicenseStoreA
             throw new ArgumentException("A serial number is required.", nameof(serialNumber));
 
         var filePath = ResolveLicenseFilePath(serialNumber);
-        return Task.FromResult(File.Exists(filePath));
+        if (!File.Exists(filePath))
+            return Task.FromResult(false);
+
+        var fileInfo = new FileInfo(filePath);
+        return Task.FromResult(fileInfo.Length > 0);
     }
 
     public async Task<byte[]?> GetLicenseAsync(string serialNumber, CancellationToken ct = default)
