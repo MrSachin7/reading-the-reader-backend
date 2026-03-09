@@ -72,6 +72,7 @@ public static class WebSocketConfiguration
                         continue;
                     }
 
+                    Console.WriteLine($"WebSocket command received. ConnectionId={connectionId}, Type={envelope.Type}");
                     await sessionManager.HandleInboundMessageAsync(connectionId, envelope.Type, envelope.Payload, context.RequestAborted);
                 }
             }
@@ -81,6 +82,7 @@ public static class WebSocketConfiguration
             }
             finally
             {
+                await sessionManager.HandleClientDisconnectedAsync(connectionId, CancellationToken.None);
                 connections.Remove(connectionId);
                 if (socket.State == WebSocketState.Open || socket.State == WebSocketState.CloseReceived)
                 {

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using ReadingTheReader.core.Application.InfrastructureContracts;
 using ReadingTheReader.core.Domain;
@@ -10,8 +11,10 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
     private readonly IClientBroadcasterAdapter _clientBroadcasterAdapter;
     private readonly IExperimentStateStoreAdapter _experimentStateStoreAdapter;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
+    private readonly ConcurrentDictionary<string, byte> _gazeSubscribers = new();
 
-    private int _isSubscribed;
+    private int _isSubscribedToHardware;
+    private int _isHardwareTracking;
     private long _receivedGazeSamples;
     private GazeData? _latestGazeSample;
     private ExperimentSession _session = ExperimentSession.Inactive;
@@ -73,30 +76,12 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
                 return false;
             }
 
-            if (Interlocked.Exchange(ref _isSubscribed, 1) == 0)
-            {
-                _eyeTrackerAdapter.GazeDataReceived += OnGazeDataReceived;
-            }
-
-            try
-            {
-                await _eyeTrackerAdapter.StartEyeTracking();
-            }
-            catch
-            {
-                if (Interlocked.Exchange(ref _isSubscribed, 0) == 1)
-                {
-                    _eyeTrackerAdapter.GazeDataReceived -= OnGazeDataReceived;
-                }
-
-                throw;
-            }
-
             Interlocked.Exchange(ref _receivedGazeSamples, 0);
             Volatile.Write(ref _latestGazeSample, null);
 
             var startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             Volatile.Write(ref _session, ExperimentSession.StartNew(startedAt, current.Participant, current.EyeTrackerDevice));
+            await EnsureGazeStreamingStateAsync(ct);
 
             var snapshot = GetCurrentSnapshot();
             await _experimentStateStoreAdapter.SaveSnapshotAsync(snapshot, ct);
@@ -121,13 +106,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             }
 
             Volatile.Write(ref _session, current.Stop(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
-
-            _eyeTrackerAdapter.StopEyeTracking();
-
-            if (Interlocked.Exchange(ref _isSubscribed, 0) == 1)
-            {
-                _eyeTrackerAdapter.GazeDataReceived -= OnGazeDataReceived;
-            }
+            await EnsureGazeStreamingStateAsync(ct);
 
             var snapshot = GetCurrentSnapshot();
             await _experimentStateStoreAdapter.SaveSnapshotAsync(snapshot, ct);
@@ -183,6 +162,14 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
                 await StopSessionAsync(ct);
                 break;
 
+            case MessageTypes.SubscribeGazeData:
+                await SubscribeGazeDataAsync(connectionId, ct);
+                break;
+
+            case MessageTypes.UnsubscribeGazeData:
+                await UnsubscribeGazeDataAsync(connectionId, ct);
+                break;
+
             case MessageTypes.GetExperimentState:
                 await _clientBroadcasterAdapter.SendToClientAsync(connectionId, MessageTypes.ExperimentState, GetCurrentSnapshot(), ct);
                 break;
@@ -221,19 +208,121 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         }
     }
 
+    public Task HandleClientDisconnectedAsync(string connectionId, CancellationToken ct = default)
+    {
+        return UnsubscribeGazeDataAsync(connectionId, ct);
+    }
+
     private void OnGazeDataReceived(object? sender, GazeData gazeData)
     {
-        var session = Volatile.Read(ref _session);
-        if (!session.IsActive)
+        if (_gazeSubscribers.IsEmpty)
         {
             return;
         }
 
         UpdateGazeSample(gazeData);
-        var sendTask = _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.GazeSample, gazeData);
+        var subscribers = _gazeSubscribers.Keys.ToArray();
+        var sendTask = BroadcastGazeSampleAsync(subscribers, gazeData);
         if (!sendTask.IsCompletedSuccessfully)
         {
             _ = IgnoreFailuresAsync(sendTask.AsTask());
+        }
+    }
+
+    private async Task SubscribeGazeDataAsync(string connectionId, CancellationToken ct)
+    {
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            _gazeSubscribers[connectionId] = 0;
+
+            try
+            {
+                await EnsureGazeStreamingStateAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(
+                    $"SubscribeGazeData failed. ConnectionId={connectionId}, Reason=EyeTrackerNotReady, Error={ex.Message}");
+                await _clientBroadcasterAdapter.SendToClientAsync(connectionId, MessageTypes.Error, new
+                {
+                    message = $"Cannot stream gaze data because the eye tracker is not ready or the licence has not been applied: {ex.Message}"
+                }, ct);
+            }
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    private async Task UnsubscribeGazeDataAsync(string connectionId, CancellationToken ct)
+    {
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            _gazeSubscribers.TryRemove(connectionId, out _);
+            await EnsureGazeStreamingStateAsync(ct);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    private async Task EnsureGazeStreamingStateAsync(CancellationToken ct)
+    {
+        var session = Volatile.Read(ref _session);
+        var shouldStream = !_gazeSubscribers.IsEmpty;
+
+        if (shouldStream)
+        {
+            if (Interlocked.Exchange(ref _isSubscribedToHardware, 1) == 0)
+            {
+                _eyeTrackerAdapter.GazeDataReceived += OnGazeDataReceived;
+            }
+
+            if (Interlocked.Exchange(ref _isHardwareTracking, 1) == 0)
+            {
+                try
+                {
+                    await _eyeTrackerAdapter.StartEyeTracking();
+                    Console.WriteLine(
+                        $"Gaze streaming started. SessionId={session.Id}, Subscribers={_gazeSubscribers.Count}");
+                }
+                catch
+                {
+                    Interlocked.Exchange(ref _isHardwareTracking, 0);
+                    if (Interlocked.Exchange(ref _isSubscribedToHardware, 0) == 1)
+                    {
+                        _eyeTrackerAdapter.GazeDataReceived -= OnGazeDataReceived;
+                    }
+
+                    throw;
+                }
+            }
+
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _isHardwareTracking, 0) == 1)
+        {
+            _eyeTrackerAdapter.StopEyeTracking();
+            Console.WriteLine(
+                $"Gaze streaming stopped. SessionId={session.Id}, Subscribers={_gazeSubscribers.Count}, SessionActive={session.IsActive}");
+        }
+
+        if (Interlocked.Exchange(ref _isSubscribedToHardware, 0) == 1)
+        {
+            _eyeTrackerAdapter.GazeDataReceived -= OnGazeDataReceived;
+        }
+    }
+
+    private async ValueTask BroadcastGazeSampleAsync(string[] subscribers, GazeData gazeData)
+    {
+        foreach (var connectionId in subscribers)
+        {
+            await _clientBroadcasterAdapter.SendToClientAsync(connectionId, MessageTypes.GazeSample, gazeData);
         }
     }
 

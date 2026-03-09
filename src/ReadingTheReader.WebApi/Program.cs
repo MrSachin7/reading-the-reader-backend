@@ -45,6 +45,17 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
+app.Use(async (context, next) =>
+{
+    if (!context.WebSockets.IsWebSocketRequest)
+    {
+        Console.WriteLine($"REST request received. Method={context.Request.Method}, Path={context.Request.Path}");
+    }
+
+    await next();
+});
+
 app.UseCors(LocalhostCorsPolicy);
 app.UseFastEndpoints(c =>
 {

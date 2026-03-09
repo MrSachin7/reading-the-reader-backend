@@ -18,4 +18,6 @@ public interface IExperimentSessionManager
     ExperimentSessionSnapshot GetCurrentSnapshot();
 
     Task HandleInboundMessageAsync(string connectionId, string messageType, JsonElement payload, CancellationToken ct = default);
+
+    Task HandleClientDisconnectedAsync(string connectionId, CancellationToken ct = default);
 }
