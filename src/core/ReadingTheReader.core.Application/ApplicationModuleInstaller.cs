@@ -11,6 +11,7 @@ public static class ApplicationModuleInstaller
         collection.AddSingleton<IParticipantService, ParticipantService>();
         collection.AddSingleton<IExperimentSessionManager, ExperimentSessionManager>();
         collection.AddSingleton<IEyeTrackerService, EyeTrackerService>();
+        collection.AddSingleton<ICalibrationService, CalibrationService>();
         return collection;
     }
 }

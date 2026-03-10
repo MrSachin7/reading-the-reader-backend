@@ -1,6 +1,7 @@
 #if WINDOWS
 using Tobii.Research;
 #endif
+using ReadingTheReader.core.Application.ApplicationContracts.Realtime;
 using ReadingTheReader.core.Application.InfrastructureContracts;
 using ReadingTheReader.core.Domain;
 
@@ -12,6 +13,7 @@ public class TobiiEyeTrackerAdapter : IEyeTrackerAdapter
 
 #if WINDOWS
     private IEyeTracker? _selectedTracker;
+    private ScreenBasedCalibration? _activeCalibration;
     private bool _isTracking;
 
     public Task<List<EyeTrackerDevice>> GetAllConnectedEyeTrackers()
@@ -72,6 +74,9 @@ public class TobiiEyeTrackerAdapter : IEyeTrackerAdapter
         if (_selectedTracker is null)
             throw new InvalidOperationException("No eye tracker selected. Select an eye tracker before starting.");
 
+        if (_activeCalibration is not null)
+            throw new InvalidOperationException("Calibration is active. Leave calibration mode before starting gaze streaming.");
+
         if (_isTracking)
             return Task.CompletedTask;
 
@@ -91,6 +96,92 @@ public class TobiiEyeTrackerAdapter : IEyeTrackerAdapter
         Console.WriteLine("Tobii eye tracking stopped");
     }
 
+    public async Task BeginCalibrationAsync(CancellationToken ct = default)
+    {
+        if (_selectedTracker is null)
+            throw new InvalidOperationException("No eye tracker selected. Select an eye tracker before starting calibration.");
+
+        if (_isTracking)
+            throw new InvalidOperationException("Stop gaze streaming before starting calibration.");
+
+        await CancelCalibrationAsync(ct);
+
+        _activeCalibration = new ScreenBasedCalibration(_selectedTracker);
+        await _activeCalibration.EnterCalibrationModeAsync();
+        Console.WriteLine($"Tobii calibration mode entered on '{_selectedTracker.Address}'");
+    }
+
+    public async Task<CalibrationCollectionResult> CollectCalibrationDataAsync(float x, float y, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        if (_activeCalibration is null)
+            throw new InvalidOperationException("Calibration mode is not active.");
+
+        var point = new NormalizedPoint2D(x, y);
+        var notes = new List<string>();
+        var status = await _activeCalibration.CollectDataAsync(point);
+        var attempts = 1;
+
+        if (status != CalibrationStatus.Success)
+        {
+            notes.Add($"First collection attempt returned '{status}'. Retrying once.");
+            status = await _activeCalibration.CollectDataAsync(point);
+            attempts += 1;
+        }
+
+        var succeeded = status == CalibrationStatus.Success;
+        if (succeeded)
+        {
+            notes.Add("Calibration data collected successfully.");
+        }
+        else
+        {
+            notes.Add($"Eye tracker returned '{status}' for this point.");
+        }
+
+        return new CalibrationCollectionResult(status.ToString(), succeeded, attempts, notes);
+    }
+
+    public async Task<CalibrationComputeResult> ComputeAndApplyCalibrationAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        if (_activeCalibration is null)
+            throw new InvalidOperationException("Calibration mode is not active.");
+
+        var result = await _activeCalibration.ComputeAndApplyAsync();
+        var status = result.Status.ToString();
+        var applied = string.Equals(status, "Success", StringComparison.OrdinalIgnoreCase);
+        IReadOnlyList<string> notes = applied
+            ? new[] { "Calibration applied on the eye tracker." }
+            : new[] { $"Compute and apply returned '{status}'." };
+
+        return new CalibrationComputeResult(status, applied, result.CalibrationPoints.Count, notes);
+    }
+
+    public async Task CancelCalibrationAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        if (_activeCalibration is null)
+            return;
+
+        try
+        {
+            await _activeCalibration.LeaveCalibrationModeAsync();
+        }
+        catch
+        {
+            // Dispose the calibration object even if Tobii reports that mode was already left.
+        }
+        finally
+        {
+            _activeCalibration.Dispose();
+            _activeCalibration = null;
+        }
+    }
+
     private void OnTobiiGazeDataReceived(object? sender, GazeDataEventArgs e)
     {
         GazeDataReceived?.Invoke(this, new GazeData
@@ -106,6 +197,7 @@ public class TobiiEyeTrackerAdapter : IEyeTrackerAdapter
     }
 #else
     private bool _isTrackerSelected;
+    private bool _isCalibrationActive;
 
     public Task<List<EyeTrackerDevice>> GetAllConnectedEyeTrackers()
     {
@@ -137,6 +229,9 @@ public class TobiiEyeTrackerAdapter : IEyeTrackerAdapter
         if (!_isTrackerSelected)
             throw new InvalidOperationException("No eye tracker selected. Select an eye tracker before starting.");
 
+        if (_isCalibrationActive)
+            throw new InvalidOperationException("Calibration is active. Leave calibration mode before starting gaze streaming.");
+
         Console.WriteLine("Tobii SDK not available on this platform. Running mock eye tracker.");
         Console.WriteLine("Mock eye tracking started");
         return Task.CompletedTask;
@@ -145,6 +240,51 @@ public class TobiiEyeTrackerAdapter : IEyeTrackerAdapter
     public void StopEyeTracking()
     {
         Console.WriteLine("Mock eye tracking stopped");
+    }
+
+    public Task BeginCalibrationAsync(CancellationToken ct = default)
+    {
+        if (!_isTrackerSelected)
+            throw new InvalidOperationException("No eye tracker selected. Select an eye tracker before starting calibration.");
+
+        _isCalibrationActive = true;
+        Console.WriteLine("Mock calibration mode entered");
+        return Task.CompletedTask;
+    }
+
+    public Task<CalibrationCollectionResult> CollectCalibrationDataAsync(float x, float y, CancellationToken ct = default)
+    {
+        if (!_isCalibrationActive)
+            throw new InvalidOperationException("Calibration mode is not active.");
+
+        return Task.FromResult(new CalibrationCollectionResult(
+            "Success",
+            true,
+            1,
+            [$"Mock calibration data collected at ({x:0.00}, {y:0.00})."]));
+    }
+
+    public Task<CalibrationComputeResult> ComputeAndApplyCalibrationAsync(CancellationToken ct = default)
+    {
+        if (!_isCalibrationActive)
+            throw new InvalidOperationException("Calibration mode is not active.");
+
+        return Task.FromResult(new CalibrationComputeResult(
+            "Success",
+            true,
+            5,
+            ["Mock calibration applied successfully."]));
+    }
+
+    public Task CancelCalibrationAsync(CancellationToken ct = default)
+    {
+        if (_isCalibrationActive)
+        {
+            Console.WriteLine("Mock calibration mode left");
+        }
+
+        _isCalibrationActive = false;
+        return Task.CompletedTask;
     }
 #endif
 }
