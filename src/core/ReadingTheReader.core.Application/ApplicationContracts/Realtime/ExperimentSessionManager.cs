@@ -35,7 +35,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         try
         {
             var current = Volatile.Read(ref _session);
-            var participantCopy = CloneParticipant(participant);
+            var participantCopy = participant.Copy();
             Volatile.Write(ref _session, current with { Participant = participantCopy });
 
             var snapshot = GetCurrentSnapshot();
@@ -53,7 +53,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         try
         {
             var current = Volatile.Read(ref _session);
-            var eyeTrackerCopy = CloneEyeTrackerDevice(eyeTrackerDevice);
+            var eyeTrackerCopy = eyeTrackerDevice.Copy();
             Volatile.Write(ref _session, current with { EyeTrackerDevice = eyeTrackerCopy });
 
             var snapshot = GetCurrentSnapshot();
@@ -135,10 +135,10 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             session.IsActive,
             session.StartedAtUnixMs,
             session.StoppedAtUnixMs,
-            session.Participant is null ? null : CloneParticipant(session.Participant),
-            session.EyeTrackerDevice is null ? null : CloneEyeTrackerDevice(session.EyeTrackerDevice),
+            session.Participant?.Copy(),
+            session.EyeTrackerDevice?.Copy(),
             Interlocked.Read(ref _receivedGazeSamples),
-            latest is null ? null : CloneGaze(latest),
+            latest?.Copy(),
             _clientBroadcasterAdapter.ConnectedClients
         );
     }
@@ -338,40 +338,4 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         }
     }
 
-    private static GazeData CloneGaze(GazeData source)
-    {
-        return new GazeData
-        {
-            DeviceTimeStamp = source.DeviceTimeStamp,
-            LeftEyeX = source.LeftEyeX,
-            LeftEyeY = source.LeftEyeY,
-            LeftEyeValidity = source.LeftEyeValidity,
-            RightEyeX = source.RightEyeX,
-            RightEyeY = source.RightEyeY,
-            RightEyeValidity = source.RightEyeValidity
-        };
-    }
-
-    private static Participant CloneParticipant(Participant source)
-    {
-        return new Participant
-        {
-            Name = source.Name,
-            Age = source.Age,
-            Sex = source.Sex,
-            ExistingEyeCondition = source.ExistingEyeCondition,
-            ReadingProficiency = source.ReadingProficiency
-        };
-    }
-
-    private static EyeTrackerDevice CloneEyeTrackerDevice(EyeTrackerDevice source)
-    {
-        return new EyeTrackerDevice
-        {
-            Name = source.Name,
-            Model = source.Model,
-            SerialNumber = source.SerialNumber,
-            HasSavedLicence = source.HasSavedLicence
-        };
-    }
 }
