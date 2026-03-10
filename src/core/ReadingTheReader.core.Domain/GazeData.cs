@@ -11,5 +11,19 @@ public class GazeData
     public float RightEyeX { get; set; }
     public float RightEyeY { get; set; }
     public string RightEyeValidity { get; set; } = string.Empty;
+
+    public GazeData Copy()
+    {
+        return new GazeData
+        {
+            DeviceTimeStamp = DeviceTimeStamp,
+            LeftEyeX = LeftEyeX,
+            LeftEyeY = LeftEyeY,
+            LeftEyeValidity = LeftEyeValidity,
+            RightEyeX = RightEyeX,
+            RightEyeY = RightEyeY,
+            RightEyeValidity = RightEyeValidity
+        };
+    }
 }
 

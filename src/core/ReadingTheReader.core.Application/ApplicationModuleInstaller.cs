@@ -13,6 +13,7 @@ public static class ApplicationModuleInstaller
         collection.AddSingleton<IReadingTextService, ReadingTextService>();
         collection.AddSingleton<IExperimentSessionManager, ExperimentSessionManager>();
         collection.AddSingleton<IEyeTrackerService, EyeTrackerService>();
+        collection.AddSingleton<ICalibrationService, CalibrationService>();
         return collection;
     }
 }

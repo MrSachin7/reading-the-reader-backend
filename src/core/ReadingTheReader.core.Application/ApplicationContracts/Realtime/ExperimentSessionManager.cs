@@ -17,6 +17,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
     private int _isHardwareTracking;
     private long _receivedGazeSamples;
     private GazeData? _latestGazeSample;
+    private CalibrationSessionSnapshot _calibrationSnapshot = CalibrationSessionSnapshots.CreateIdle();
     private ExperimentSession _session = ExperimentSession.Inactive;
 
     public ExperimentSessionManager(
@@ -27,6 +28,8 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         _eyeTrackerAdapter = eyeTrackerAdapter;
         _clientBroadcasterAdapter = clientBroadcasterAdapter;
         _experimentStateStoreAdapter = experimentStateStoreAdapter;
+
+        RestoreLatestSnapshot();
     }
 
     public async ValueTask SetCurrentParticipantAsync(Participant participant, CancellationToken ct = default)
@@ -35,11 +38,10 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         try
         {
             var current = Volatile.Read(ref _session);
-            var participantCopy = CloneParticipant(participant);
+            var participantCopy = participant.Copy();
             Volatile.Write(ref _session, current with { Participant = participantCopy });
 
-            var snapshot = GetCurrentSnapshot();
-            await _experimentStateStoreAdapter.SaveSnapshotAsync(snapshot, ct);
+            await SaveCurrentSnapshotAsync(ct);
         }
         finally
         {
@@ -53,11 +55,24 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         try
         {
             var current = Volatile.Read(ref _session);
-            var eyeTrackerCopy = CloneEyeTrackerDevice(eyeTrackerDevice);
+            var eyeTrackerCopy = eyeTrackerDevice.Copy();
             Volatile.Write(ref _session, current with { EyeTrackerDevice = eyeTrackerCopy });
 
-            var snapshot = GetCurrentSnapshot();
-            await _experimentStateStoreAdapter.SaveSnapshotAsync(snapshot, ct);
+            await SaveCurrentSnapshotAsync(ct);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    public async ValueTask SetCalibrationStateAsync(CalibrationSessionSnapshot calibrationSnapshot, CancellationToken ct = default)
+    {
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            _calibrationSnapshot = calibrationSnapshot;
+            await SaveCurrentSnapshotAsync(ct);
         }
         finally
         {
@@ -135,10 +150,12 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             session.IsActive,
             session.StartedAtUnixMs,
             session.StoppedAtUnixMs,
-            session.Participant is null ? null : CloneParticipant(session.Participant),
-            session.EyeTrackerDevice is null ? null : CloneEyeTrackerDevice(session.EyeTrackerDevice),
+            session.Participant?.Copy(),
+            session.EyeTrackerDevice?.Copy(),
+            _calibrationSnapshot,
+            BuildSetupSnapshot(session, _calibrationSnapshot),
             Interlocked.Read(ref _receivedGazeSamples),
-            latest is null ? null : CloneGaze(latest),
+            latest?.Copy(),
             _clientBroadcasterAdapter.ConnectedClients
         );
     }
@@ -338,40 +355,52 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         }
     }
 
-    private static GazeData CloneGaze(GazeData source)
+    private async Task SaveCurrentSnapshotAsync(CancellationToken ct)
     {
-        return new GazeData
-        {
-            DeviceTimeStamp = source.DeviceTimeStamp,
-            LeftEyeX = source.LeftEyeX,
-            LeftEyeY = source.LeftEyeY,
-            LeftEyeValidity = source.LeftEyeValidity,
-            RightEyeX = source.RightEyeX,
-            RightEyeY = source.RightEyeY,
-            RightEyeValidity = source.RightEyeValidity
-        };
+        await _experimentStateStoreAdapter.SaveSnapshotAsync(GetCurrentSnapshot(), ct);
     }
 
-    private static Participant CloneParticipant(Participant source)
+    private void RestoreLatestSnapshot()
     {
-        return new Participant
+        var snapshot = _experimentStateStoreAdapter.LoadLatestSnapshotAsync().AsTask().GetAwaiter().GetResult();
+        if (snapshot is null)
         {
-            Name = source.Name,
-            Age = source.Age,
-            Sex = source.Sex,
-            ExistingEyeCondition = source.ExistingEyeCondition,
-            ReadingProficiency = source.ReadingProficiency
-        };
+            return;
+        }
+
+        Volatile.Write(ref _session, new ExperimentSession(
+            snapshot.SessionId,
+            snapshot.IsActive,
+            snapshot.StartedAtUnixMs,
+            snapshot.StoppedAtUnixMs,
+            snapshot.Participant?.Copy(),
+            snapshot.EyeTrackerDevice?.Copy()));
+
+        _calibrationSnapshot = snapshot.Calibration ?? CalibrationSessionSnapshots.CreateIdle();
+        Interlocked.Exchange(ref _receivedGazeSamples, snapshot.ReceivedGazeSamples);
+        Volatile.Write(ref _latestGazeSample, snapshot.LatestGazeSample?.Copy());
     }
 
-    private static EyeTrackerDevice CloneEyeTrackerDevice(EyeTrackerDevice source)
+    private static ExperimentSetupSnapshot BuildSetupSnapshot(
+        ExperimentSession session,
+        CalibrationSessionSnapshot calibrationSnapshot)
     {
-        return new EyeTrackerDevice
-        {
-            Name = source.Name,
-            Model = source.Model,
-            SerialNumber = source.SerialNumber,
-            HasSavedLicence = source.HasSavedLicence
-        };
+        var eyeTrackerSetupCompleted = session.EyeTrackerDevice is not null &&
+                                       !string.IsNullOrWhiteSpace(session.EyeTrackerDevice.SerialNumber);
+        var participantSetupCompleted = session.Participant is not null &&
+                                        !string.IsNullOrWhiteSpace(session.Participant.Name);
+        var calibrationCompleted = CalibrationSessionSnapshots.IsApplied(calibrationSnapshot);
+
+        var currentStepIndex =
+            !eyeTrackerSetupCompleted ? 0 :
+            !participantSetupCompleted ? 1 :
+            !calibrationCompleted ? 2 :
+            2;
+
+        return new ExperimentSetupSnapshot(
+            eyeTrackerSetupCompleted,
+            participantSetupCompleted,
+            calibrationCompleted,
+            currentStepIndex);
     }
 }

@@ -16,6 +16,7 @@ public static class MessageTypes
     public const string ExperimentStarted = "experimentStarted";
     public const string ExperimentStopped = "experimentStopped";
     public const string ExperimentState = "experimentState";
+    public const string CalibrationStateChanged = "calibrationStateChanged";
     public const string ResearcherCommand = "researcherCommand";
     public const string Error = "error";
 }

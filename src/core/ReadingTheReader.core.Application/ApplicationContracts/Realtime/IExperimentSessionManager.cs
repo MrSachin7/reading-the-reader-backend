@@ -9,6 +9,8 @@ public interface IExperimentSessionManager
     
     ValueTask SetCurrentEyeTrackerAsync(EyeTrackerDevice eyeTrackerDevice, CancellationToken ct = default);
 
+    ValueTask SetCalibrationStateAsync(CalibrationSessionSnapshot calibrationSnapshot, CancellationToken ct = default);
+
     Task<bool> StartSessionAsync(CancellationToken ct = default);
 
     Task<bool> StopSessionAsync(CancellationToken ct = default);
