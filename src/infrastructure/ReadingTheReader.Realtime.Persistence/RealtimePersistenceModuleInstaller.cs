@@ -9,12 +9,12 @@ public static class RealtimePersistenceModuleInstaller
     public static IServiceCollection InstallRealtimePersistenceModule(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<ExperimentPersistenceOptions>(configuration.GetSection(ExperimentPersistenceOptions.SectionName));
-        services.Configure<ReadingTextStorageOptions>(configuration.GetSection(ReadingTextStorageOptions.SectionName));
+        services.Configure<ReadingMaterialSetupStorageOptions>(configuration.GetSection(ReadingMaterialSetupStorageOptions.SectionName));
 
         var options = configuration.GetSection(ExperimentPersistenceOptions.SectionName).Get<ExperimentPersistenceOptions>()
             ?? new ExperimentPersistenceOptions();
-        var readingTextOptions = configuration.GetSection(ReadingTextStorageOptions.SectionName).Get<ReadingTextStorageOptions>()
-            ?? new ReadingTextStorageOptions();
+        var readingMaterialSetupOptions = configuration.GetSection(ReadingMaterialSetupStorageOptions.SectionName).Get<ReadingMaterialSetupStorageOptions>()
+            ?? new ReadingMaterialSetupStorageOptions();
 
         if (string.Equals(options.Provider, "File", StringComparison.OrdinalIgnoreCase))
         {
@@ -25,7 +25,7 @@ public static class RealtimePersistenceModuleInstaller
             services.AddSingleton<IExperimentStateStoreAdapter, InMemoryExperimentStateStoreAdapter>();
         }
 
-        services.AddSingleton<IReadingTextStoreAdapter>(_ => new FileReadingTextStoreAdapter(readingTextOptions.DirectoryPath));
+        services.AddSingleton<IReadingMaterialSetupStoreAdapter>(_ => new FileReadingMaterialSetupStoreAdapter(readingMaterialSetupOptions.DirectoryPath));
         services.AddSingleton<IEyeTrackerLicenseStoreAdapter, FileEyeTrackerLicenseStoreAdapter>();
         services.AddHostedService<ExperimentStateCheckpointWorker>();
 
