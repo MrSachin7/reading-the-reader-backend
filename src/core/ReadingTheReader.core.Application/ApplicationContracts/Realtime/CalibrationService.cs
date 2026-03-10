@@ -15,16 +15,19 @@ public sealed class CalibrationService : ICalibrationService
 
     private readonly IEyeTrackerAdapter _eyeTrackerAdapter;
     private readonly IClientBroadcasterAdapter _clientBroadcasterAdapter;
+    private readonly IExperimentSessionManager _experimentSessionManager;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    private CalibrationSessionSnapshot _snapshot = CreateIdleSnapshot();
+    private CalibrationSessionSnapshot _snapshot = CalibrationSessionSnapshots.CreateIdle();
 
     public CalibrationService(
         IEyeTrackerAdapter eyeTrackerAdapter,
-        IClientBroadcasterAdapter clientBroadcasterAdapter)
+        IClientBroadcasterAdapter clientBroadcasterAdapter,
+        IExperimentSessionManager experimentSessionManager)
     {
         _eyeTrackerAdapter = eyeTrackerAdapter;
         _clientBroadcasterAdapter = clientBroadcasterAdapter;
+        _experimentSessionManager = experimentSessionManager;
     }
 
     public CalibrationSessionSnapshot GetCurrentSnapshot()
@@ -223,20 +226,6 @@ public sealed class CalibrationService : ICalibrationService
         }
     }
 
-    private static CalibrationSessionSnapshot CreateIdleSnapshot()
-    {
-        return new CalibrationSessionSnapshot(
-            null,
-            "idle",
-            CalibrationPatterns.ScreenBasedFivePoint,
-            null,
-            null,
-            null,
-            [],
-            null,
-            []);
-    }
-
     private static CalibrationSessionSnapshot CreateFailedSnapshot(
         string message,
         IReadOnlyList<CalibrationPointState>? points = null)
@@ -285,6 +274,7 @@ public sealed class CalibrationService : ICalibrationService
 
     private async Task BroadcastSnapshotAsync(CancellationToken ct)
     {
+        await _experimentSessionManager.SetCalibrationStateAsync(_snapshot, ct);
         await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.CalibrationStateChanged, _snapshot, ct);
     }
 

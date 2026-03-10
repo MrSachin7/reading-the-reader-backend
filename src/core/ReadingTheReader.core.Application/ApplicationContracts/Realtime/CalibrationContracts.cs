@@ -50,3 +50,27 @@ public sealed record CalibrationSessionSnapshot(
     IReadOnlyList<CalibrationPointState> Points,
     CalibrationRunResult? Result,
     IReadOnlyList<string> Notes);
+
+public static class CalibrationSessionSnapshots
+{
+    public static CalibrationSessionSnapshot CreateIdle()
+    {
+        return new CalibrationSessionSnapshot(
+            null,
+            "idle",
+            CalibrationPatterns.ScreenBasedFivePoint,
+            null,
+            null,
+            null,
+            [],
+            null,
+            []);
+    }
+
+    public static bool IsApplied(CalibrationSessionSnapshot? snapshot)
+    {
+        return snapshot is not null &&
+               string.Equals(snapshot.Status, "completed", StringComparison.OrdinalIgnoreCase) &&
+               snapshot.Result?.Applied == true;
+    }
+}
