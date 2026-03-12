@@ -90,12 +90,13 @@ public sealed record ReadingContentSnapshot(
 public sealed record ParticipantViewportSnapshot(
     bool IsConnected,
     double ScrollProgress,
+    double ViewportWidthPx,
     double ViewportHeightPx,
     double ContentHeightPx,
     double ContentWidthPx,
     long UpdatedAtUnixMs)
 {
-    public static ParticipantViewportSnapshot Disconnected { get; } = new(false, 0, 0, 0, 0, 0);
+    public static ParticipantViewportSnapshot Disconnected { get; } = new(false, 0, 0, 0, 0, 0, 0);
 
     public ParticipantViewportSnapshot Copy()
     {
@@ -190,6 +191,7 @@ public sealed record ApplyInterventionCommand(
 
 public sealed record UpdateParticipantViewportCommand(
     double ScrollProgress,
+    double ViewportWidthPx,
     double ViewportHeightPx,
     double ContentHeightPx,
     double ContentWidthPx);
