@@ -7,8 +7,9 @@ namespace ReadingTheReader.core.Application;
 
 public static class ApplicationModuleInstaller
 {
-    public static IServiceCollection InstallApplicationModule(this IServiceCollection collection)
+    public static IServiceCollection InstallApplicationModule(this IServiceCollection collection, CalibrationOptions calibrationOptions)
     {
+        collection.AddSingleton(calibrationOptions);
         collection.AddSingleton<IParticipantService, ParticipantService>();
         collection.AddSingleton<IReadingMaterialSetupService, ReadingMaterialSetupService>();
         collection.AddSingleton<IReadingInterventionRuntime, ReadingInterventionRuntime>();

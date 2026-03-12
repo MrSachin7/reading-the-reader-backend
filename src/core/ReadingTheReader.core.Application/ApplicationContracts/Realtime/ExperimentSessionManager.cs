@@ -375,6 +375,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
 
     public void UpdateGazeSample(GazeData gazeData)
     {
+        gazeData.Sanitize();
         Interlocked.Increment(ref _receivedGazeSamples);
         Volatile.Write(ref _latestGazeSample, gazeData);
     }

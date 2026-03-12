@@ -4,30 +4,27 @@ namespace ReadingTheReader.core.Application.ApplicationContracts.Realtime;
 
 public sealed class CalibrationService : ICalibrationService
 {
-    private static readonly IReadOnlyList<CalibrationPointDefinition> DefaultPoints =
-    [
-        new("center", "Center", 0.5f, 0.5f),
-        new("top-left", "Top left", 0.1f, 0.1f),
-        new("bottom-left", "Bottom left", 0.1f, 0.9f),
-        new("top-right", "Top right", 0.9f, 0.1f),
-        new("bottom-right", "Bottom right", 0.9f, 0.9f),
-    ];
-
     private readonly IEyeTrackerAdapter _eyeTrackerAdapter;
     private readonly IClientBroadcasterAdapter _clientBroadcasterAdapter;
     private readonly IExperimentSessionManager _experimentSessionManager;
+    private readonly IReadOnlyList<CalibrationPointDefinition> _points;
+    private readonly string _pattern;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    private CalibrationSessionSnapshot _snapshot = CalibrationSessionSnapshots.CreateIdle();
+    private CalibrationSessionSnapshot _snapshot;
 
     public CalibrationService(
         IEyeTrackerAdapter eyeTrackerAdapter,
         IClientBroadcasterAdapter clientBroadcasterAdapter,
-        IExperimentSessionManager experimentSessionManager)
+        IExperimentSessionManager experimentSessionManager,
+        CalibrationOptions calibrationOptions)
     {
         _eyeTrackerAdapter = eyeTrackerAdapter;
         _clientBroadcasterAdapter = clientBroadcasterAdapter;
         _experimentSessionManager = experimentSessionManager;
+        _points = calibrationOptions.GetPointDefinitions();
+        _pattern = calibrationOptions.GetPatternName();
+        _snapshot = CalibrationSessionSnapshots.CreateIdle(_pattern);
     }
 
     public CalibrationSessionSnapshot GetCurrentSnapshot()
@@ -52,11 +49,11 @@ public sealed class CalibrationService : ICalibrationService
             _snapshot = new CalibrationSessionSnapshot(
                 Guid.NewGuid(),
                 "running",
-                CalibrationPatterns.ScreenBasedFivePoint,
+                _pattern,
                 now,
                 now,
                 null,
-                DefaultPoints
+                _points
                     .Select(point => new CalibrationPointState(
                         point.PointId,
                         point.Label,
@@ -238,7 +235,7 @@ public sealed class CalibrationService : ICalibrationService
         }
     }
 
-    private static CalibrationSessionSnapshot CreateFailedSnapshot(
+    private CalibrationSessionSnapshot CreateFailedSnapshot(
         string message,
         IReadOnlyList<CalibrationPointState>? points = null)
     {
@@ -246,7 +243,7 @@ public sealed class CalibrationService : ICalibrationService
         return new CalibrationSessionSnapshot(
             Guid.NewGuid(),
             "failed",
-            CalibrationPatterns.ScreenBasedFivePoint,
+            _pattern,
             now,
             now,
             now,

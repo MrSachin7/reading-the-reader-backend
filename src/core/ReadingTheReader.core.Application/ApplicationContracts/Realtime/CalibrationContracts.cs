@@ -2,7 +2,9 @@ namespace ReadingTheReader.core.Application.ApplicationContracts.Realtime;
 
 public static class CalibrationPatterns
 {
-    public const string ScreenBasedFivePoint = "screen-based-five-point";
+    public const string ScreenBasedNinePoint = "screen-based-nine-point";
+    public const string ScreenBasedThirteenPoint = "screen-based-thirteen-point";
+    public const string ScreenBasedSixteenPoint = "screen-based-sixteen-point";
 }
 
 public sealed record CalibrationPointDefinition(
@@ -53,12 +55,12 @@ public sealed record CalibrationSessionSnapshot(
 
 public static class CalibrationSessionSnapshots
 {
-    public static CalibrationSessionSnapshot CreateIdle()
+    public static CalibrationSessionSnapshot CreateIdle(string pattern = CalibrationPatterns.ScreenBasedNinePoint)
     {
         return new CalibrationSessionSnapshot(
             null,
             "idle",
-            CalibrationPatterns.ScreenBasedFivePoint,
+            pattern,
             null,
             null,
             null,

@@ -2,6 +2,8 @@
 
 public class GazeData
 {
+    private const string InvalidValidity = "Invalid";
+
     public long DeviceTimeStamp { get; set; }
 
     public float LeftEyeX { get; set; }
@@ -14,7 +16,7 @@ public class GazeData
 
     public GazeData Copy()
     {
-        return new GazeData
+        var copy = new GazeData
         {
             DeviceTimeStamp = DeviceTimeStamp,
             LeftEyeX = LeftEyeX,
@@ -24,6 +26,34 @@ public class GazeData
             RightEyeY = RightEyeY,
             RightEyeValidity = RightEyeValidity
         };
+
+        copy.Sanitize();
+        return copy;
     }
+
+    public void Sanitize()
+    {
+        var leftEye = SanitizeEye(LeftEyeX, LeftEyeY, LeftEyeValidity);
+        LeftEyeX = leftEye.X;
+        LeftEyeY = leftEye.Y;
+        LeftEyeValidity = leftEye.Validity;
+
+        var rightEye = SanitizeEye(RightEyeX, RightEyeY, RightEyeValidity);
+        RightEyeX = rightEye.X;
+        RightEyeY = rightEye.Y;
+        RightEyeValidity = rightEye.Validity;
+    }
+
+    private static SanitizedEye SanitizeEye(float x, float y, string validity)
+    {
+        if (float.IsFinite(x) && float.IsFinite(y))
+        {
+            return new SanitizedEye(x, y, validity);
+        }
+
+        return new SanitizedEye(0f, 0f, InvalidValidity);
+    }
+
+    private readonly record struct SanitizedEye(float X, float Y, string Validity);
 }
 

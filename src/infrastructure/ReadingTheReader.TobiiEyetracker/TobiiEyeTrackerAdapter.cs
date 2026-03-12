@@ -184,7 +184,7 @@ public class TobiiEyeTrackerAdapter : IEyeTrackerAdapter
 
     private void OnTobiiGazeDataReceived(object? sender, GazeDataEventArgs e)
     {
-        GazeDataReceived?.Invoke(this, new GazeData
+        var gazeData = new GazeData
         {
             DeviceTimeStamp = e.DeviceTimeStamp,
             LeftEyeX = e.LeftEye.GazePoint.PositionOnDisplayArea.X,
@@ -193,7 +193,10 @@ public class TobiiEyeTrackerAdapter : IEyeTrackerAdapter
             RightEyeX = e.RightEye.GazePoint.PositionOnDisplayArea.X,
             RightEyeY = e.RightEye.GazePoint.PositionOnDisplayArea.Y,
             RightEyeValidity = e.RightEye.GazePoint.Validity.ToString()
-        });
+        };
+
+        gazeData.Sanitize();
+        GazeDataReceived?.Invoke(this, gazeData);
     }
 #else
     private bool _isTrackerSelected;
