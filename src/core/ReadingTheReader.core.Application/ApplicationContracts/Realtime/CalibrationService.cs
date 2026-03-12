@@ -45,6 +45,7 @@ public sealed class CalibrationService : ICalibrationService
                 await _eyeTrackerAdapter.CancelCalibrationAsync(ct);
             }
 
+            await _experimentSessionManager.PauseGazeStreamingAsync(ct);
             await _eyeTrackerAdapter.BeginCalibrationAsync(ct);
 
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -75,6 +76,7 @@ public sealed class CalibrationService : ICalibrationService
         }
         catch (Exception ex)
         {
+            await SafeResumeGazeStreamingAsync(ct);
             _snapshot = CreateFailedSnapshot(ex.Message);
             await BroadcastSnapshotAsync(ct);
             throw;
@@ -137,6 +139,7 @@ public sealed class CalibrationService : ICalibrationService
             if (!result.Succeeded)
             {
                 await _eyeTrackerAdapter.CancelCalibrationAsync(ct);
+                await SafeResumeGazeStreamingAsync(ct);
             }
 
             await BroadcastSnapshotAsync(ct);
@@ -145,6 +148,7 @@ public sealed class CalibrationService : ICalibrationService
         catch (Exception ex)
         {
             await SafeCancelCalibrationAsync(ct);
+            await SafeResumeGazeStreamingAsync(ct);
             _snapshot = CreateFailedSnapshot(ex.Message, _snapshot.Points);
             await BroadcastSnapshotAsync(ct);
             throw;
@@ -185,12 +189,14 @@ public sealed class CalibrationService : ICalibrationService
             };
 
             await _eyeTrackerAdapter.CancelCalibrationAsync(ct);
+            await SafeResumeGazeStreamingAsync(ct);
             await BroadcastSnapshotAsync(ct);
             return _snapshot;
         }
         catch (Exception ex)
         {
             await SafeCancelCalibrationAsync(ct);
+            await SafeResumeGazeStreamingAsync(ct);
             _snapshot = CreateFailedSnapshot(ex.Message, _snapshot.Points);
             await BroadcastSnapshotAsync(ct);
             throw;
@@ -207,6 +213,7 @@ public sealed class CalibrationService : ICalibrationService
         try
         {
             await _eyeTrackerAdapter.CancelCalibrationAsync(ct);
+            await SafeResumeGazeStreamingAsync(ct);
 
             if (!string.Equals(_snapshot.Status, "running", StringComparison.OrdinalIgnoreCase))
             {
@@ -292,6 +299,18 @@ public sealed class CalibrationService : ICalibrationService
         catch
         {
             // Best effort cleanup for calibration mode.
+        }
+    }
+
+    private async Task SafeResumeGazeStreamingAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _experimentSessionManager.ResumeGazeStreamingAsync(ct);
+        }
+        catch
+        {
+            // Best effort cleanup for gaze streaming state.
         }
     }
 }

@@ -21,6 +21,10 @@ public interface IExperimentSessionManager
 
     ValueTask<InterventionEventSnapshot?> ApplyInterventionAsync(ApplyInterventionCommand command, CancellationToken ct = default);
 
+    ValueTask PauseGazeStreamingAsync(CancellationToken ct = default);
+
+    ValueTask ResumeGazeStreamingAsync(CancellationToken ct = default);
+
     Task<bool> StartSessionAsync(CancellationToken ct = default);
 
     Task<bool> StopSessionAsync(CancellationToken ct = default);

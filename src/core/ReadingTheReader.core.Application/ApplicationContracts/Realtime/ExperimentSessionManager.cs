@@ -24,6 +24,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
 
     private int _isSubscribedToHardware;
     private int _isHardwareTracking;
+    private int _isGazeStreamingSuppressed;
     private long _receivedGazeSamples;
     private GazeData? _latestGazeSample;
     private CalibrationSessionSnapshot _calibrationSnapshot = CalibrationSessionSnapshots.CreateIdle();
@@ -289,6 +290,34 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         return interventionEvent;
     }
 
+    public async ValueTask PauseGazeStreamingAsync(CancellationToken ct = default)
+    {
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            Interlocked.Exchange(ref _isGazeStreamingSuppressed, 1);
+            StopHardwareStreaming();
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    public async ValueTask ResumeGazeStreamingAsync(CancellationToken ct = default)
+    {
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            Interlocked.Exchange(ref _isGazeStreamingSuppressed, 0);
+            await EnsureGazeStreamingStateAsync(ct);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
     public async Task<bool> StartSessionAsync(CancellationToken ct = default)
     {
         await _lifecycleGate.WaitAsync(ct);
@@ -411,7 +440,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             case MessageTypes.ParticipantViewportUpdated:
                 if (TryDeserializePayload<UpdateParticipantViewportCommand>(payload, out var viewportCommand))
                 {
-                    await UpdateParticipantViewportAsync(connectionId, viewportCommand, ct);
+                    await UpdateParticipantViewportAsync(connectionId, viewportCommand!, ct);
                     return;
                 }
 
@@ -421,7 +450,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             case MessageTypes.ReadingFocusUpdated:
                 if (TryDeserializePayload<UpdateReadingFocusCommand>(payload, out var focusCommand))
                 {
-                    await UpdateReadingFocusAsync(focusCommand, ct);
+                    await UpdateReadingFocusAsync(focusCommand!, ct);
                     return;
                 }
 
@@ -431,7 +460,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             case MessageTypes.ApplyIntervention:
                 if (TryDeserializePayload<ApplyInterventionCommand>(payload, out var interventionCommand))
                 {
-                    await ApplyInterventionAsync(interventionCommand, ct);
+                    await ApplyInterventionAsync(interventionCommand!, ct);
                     return;
                 }
 
@@ -580,7 +609,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
     private async Task EnsureGazeStreamingStateAsync(CancellationToken ct)
     {
         var session = Volatile.Read(ref _session);
-        var shouldStream = !_gazeSubscribers.IsEmpty;
+        var shouldStream = !_gazeSubscribers.IsEmpty && Volatile.Read(ref _isGazeStreamingSuppressed) == 0;
 
         if (shouldStream)
         {
@@ -612,17 +641,9 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             return;
         }
 
-        if (Interlocked.Exchange(ref _isHardwareTracking, 0) == 1)
-        {
-            _eyeTrackerAdapter.StopEyeTracking();
-            Console.WriteLine(
-                $"Gaze streaming stopped. SessionId={session.Id}, Subscribers={_gazeSubscribers.Count}, SessionActive={session.IsActive}");
-        }
-
-        if (Interlocked.Exchange(ref _isSubscribedToHardware, 0) == 1)
-        {
-            _eyeTrackerAdapter.GazeDataReceived -= OnGazeDataReceived;
-        }
+        StopHardwareStreaming();
+        Console.WriteLine(
+            $"Gaze streaming stopped. SessionId={session.Id}, Subscribers={_gazeSubscribers.Count}, SessionActive={session.IsActive}, Suppressed={Volatile.Read(ref _isGazeStreamingSuppressed) == 1}");
     }
 
     private async ValueTask BroadcastGazeSampleAsync(string[] subscribers, GazeData gazeData)
@@ -752,5 +773,18 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
     private static string? NormalizeNullableText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private void StopHardwareStreaming()
+    {
+        if (Interlocked.Exchange(ref _isHardwareTracking, 0) == 1)
+        {
+            _eyeTrackerAdapter.StopEyeTracking();
+        }
+
+        if (Interlocked.Exchange(ref _isSubscribedToHardware, 0) == 1)
+        {
+            _eyeTrackerAdapter.GazeDataReceived -= OnGazeDataReceived;
+        }
     }
 }
