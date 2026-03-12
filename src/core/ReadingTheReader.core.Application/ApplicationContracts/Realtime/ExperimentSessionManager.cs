@@ -7,11 +7,20 @@ namespace ReadingTheReader.core.Application.ApplicationContracts.Realtime;
 
 public sealed class ExperimentSessionManager : IExperimentSessionManager
 {
+    private const int MaxRecentInterventions = 25;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     private readonly IEyeTrackerAdapter _eyeTrackerAdapter;
     private readonly IClientBroadcasterAdapter _clientBroadcasterAdapter;
     private readonly IExperimentStateStoreAdapter _experimentStateStoreAdapter;
+    private readonly IReadingInterventionRuntime _readingInterventionRuntime;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly ConcurrentDictionary<string, byte> _gazeSubscribers = new();
+    private readonly ConcurrentDictionary<string, byte> _participantViewConnections = new();
 
     private int _isSubscribedToHardware;
     private int _isHardwareTracking;
@@ -19,15 +28,18 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
     private GazeData? _latestGazeSample;
     private CalibrationSessionSnapshot _calibrationSnapshot = CalibrationSessionSnapshots.CreateIdle();
     private ExperimentSession _session = ExperimentSession.Inactive;
+    private LiveReadingSessionSnapshot _liveReadingSession = LiveReadingSessionSnapshot.Empty;
 
     public ExperimentSessionManager(
         IEyeTrackerAdapter eyeTrackerAdapter,
         IClientBroadcasterAdapter clientBroadcasterAdapter,
-        IExperimentStateStoreAdapter experimentStateStoreAdapter)
+        IExperimentStateStoreAdapter experimentStateStoreAdapter,
+        IReadingInterventionRuntime readingInterventionRuntime)
     {
         _eyeTrackerAdapter = eyeTrackerAdapter;
         _clientBroadcasterAdapter = clientBroadcasterAdapter;
         _experimentStateStoreAdapter = experimentStateStoreAdapter;
+        _readingInterventionRuntime = readingInterventionRuntime;
 
         RestoreLatestSnapshot();
     }
@@ -48,7 +60,7 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             _lifecycleGate.Release();
         }
     }
-    
+
     public async ValueTask SetCurrentEyeTrackerAsync(EyeTrackerDevice eyeTrackerDevice, CancellationToken ct = default)
     {
         await _lifecycleGate.WaitAsync(ct);
@@ -78,6 +90,203 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         {
             _lifecycleGate.Release();
         }
+    }
+
+    public async ValueTask SetReadingSessionAsync(UpsertReadingSessionCommand command, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(command.DocumentId))
+        {
+            throw new InvalidOperationException("documentId is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.Title))
+        {
+            throw new InvalidOperationException("title is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.Markdown))
+        {
+            throw new InvalidOperationException("markdown is required.");
+        }
+
+        LiveReadingSessionSnapshot nextState;
+
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            var updatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var content = new ReadingContentSnapshot(
+                command.DocumentId.Trim(),
+                command.Title.Trim(),
+                command.Markdown,
+                string.IsNullOrWhiteSpace(command.SourceSetupId) ? null : command.SourceSetupId.Trim(),
+                updatedAtUnixMs);
+
+            var viewportIsConnected = _liveReadingSession.ParticipantViewport.IsConnected;
+            _liveReadingSession = _liveReadingSession with
+            {
+                Content = content,
+                Presentation = ReadingPresentationRules.Normalize(command.Presentation),
+                ParticipantViewport = ParticipantViewportSnapshot.Disconnected with
+                {
+                    IsConnected = viewportIsConnected,
+                    UpdatedAtUnixMs = updatedAtUnixMs
+                },
+                Focus = ReadingFocusSnapshot.Empty,
+            };
+
+            nextState = _liveReadingSession.Copy();
+            await SaveCurrentSnapshotAsync(ct);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+
+        await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ReadingSessionChanged, nextState, ct);
+    }
+
+    public async ValueTask<LiveReadingSessionSnapshot> RegisterParticipantViewAsync(string connectionId, CancellationToken ct = default)
+    {
+        LiveReadingSessionSnapshot nextState;
+
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            _participantViewConnections[connectionId] = 0;
+            var updatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _liveReadingSession = _liveReadingSession with
+            {
+                ParticipantViewport = _liveReadingSession.ParticipantViewport with
+                {
+                    IsConnected = true,
+                    UpdatedAtUnixMs = updatedAtUnixMs
+                }
+            };
+
+            nextState = _liveReadingSession.Copy();
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+
+        await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ParticipantViewportChanged, nextState.ParticipantViewport, ct);
+        return nextState;
+    }
+
+    public async ValueTask<ParticipantViewportSnapshot> UpdateParticipantViewportAsync(
+        string connectionId,
+        UpdateParticipantViewportCommand command,
+        CancellationToken ct = default)
+    {
+        ParticipantViewportSnapshot viewport;
+
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            _participantViewConnections[connectionId] = 0;
+            var updatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _liveReadingSession = _liveReadingSession with
+            {
+                ParticipantViewport = new ParticipantViewportSnapshot(
+                    true,
+                    Clamp(command.ScrollProgress, 0, 1),
+                    Math.Max(command.ViewportHeightPx, 0),
+                    Math.Max(command.ContentHeightPx, 0),
+                    Math.Max(command.ContentWidthPx, 0),
+                    updatedAtUnixMs)
+            };
+
+            viewport = _liveReadingSession.ParticipantViewport.Copy();
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+
+        await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ParticipantViewportChanged, viewport, ct);
+        return viewport;
+    }
+
+    public async ValueTask<ReadingFocusSnapshot> UpdateReadingFocusAsync(
+        UpdateReadingFocusCommand command,
+        CancellationToken ct = default)
+    {
+        ReadingFocusSnapshot focus;
+
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            var updatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _liveReadingSession = _liveReadingSession with
+            {
+                Focus = new ReadingFocusSnapshot(
+                    command.IsInsideReadingArea,
+                    command.IsInsideReadingArea ? ClampNullable(command.NormalizedContentX, 0, 1) : null,
+                    command.IsInsideReadingArea ? ClampNullable(command.NormalizedContentY, 0, 1) : null,
+                    command.IsInsideReadingArea ? NormalizeNullableText(command.ActiveTokenId) : null,
+                    command.IsInsideReadingArea ? NormalizeNullableText(command.ActiveBlockId) : null,
+                    updatedAtUnixMs)
+            };
+
+            focus = _liveReadingSession.Focus.Copy();
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+
+        await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ReadingFocusChanged, focus, ct);
+        return focus;
+    }
+
+    public async ValueTask<InterventionEventSnapshot?> ApplyInterventionAsync(
+        ApplyInterventionCommand command,
+        CancellationToken ct = default)
+    {
+        InterventionEventSnapshot? interventionEvent;
+        LiveReadingSessionSnapshot? nextState = null;
+
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            var updatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var execution = _readingInterventionRuntime.Apply(
+                _liveReadingSession.Presentation,
+                command,
+                updatedAtUnixMs);
+
+            if (execution is null)
+            {
+                return null;
+            }
+
+            _liveReadingSession = _liveReadingSession with
+            {
+                Presentation = execution.Presentation.Copy(),
+                LatestIntervention = execution.Event.Copy(),
+                RecentInterventions = BuildRecentInterventionHistory(
+                    _liveReadingSession.RecentInterventions,
+                    execution.Event)
+            };
+
+            interventionEvent = execution.Event.Copy();
+            nextState = _liveReadingSession.Copy();
+            await SaveCurrentSnapshotAsync(ct);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+
+        if (interventionEvent is not null && nextState is not null)
+        {
+            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ReadingSessionChanged, nextState, ct);
+            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.InterventionEvent, interventionEvent, ct);
+        }
+
+        return interventionEvent;
     }
 
     public async Task<bool> StartSessionAsync(CancellationToken ct = default)
@@ -153,11 +362,11 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
             session.Participant?.Copy(),
             session.EyeTrackerDevice?.Copy(),
             _calibrationSnapshot,
-            BuildSetupSnapshot(session, _calibrationSnapshot),
+            BuildSetupSnapshot(session, _calibrationSnapshot, _liveReadingSession),
             Interlocked.Read(ref _receivedGazeSamples),
             latest?.Copy(),
-            _clientBroadcasterAdapter.ConnectedClients
-        );
+            _clientBroadcasterAdapter.ConnectedClients,
+            _liveReadingSession.Copy());
     }
 
     public async Task HandleInboundMessageAsync(string connectionId, string messageType, JsonElement payload, CancellationToken ct = default)
@@ -191,6 +400,44 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
                 await _clientBroadcasterAdapter.SendToClientAsync(connectionId, MessageTypes.ExperimentState, GetCurrentSnapshot(), ct);
                 break;
 
+            case MessageTypes.RegisterParticipantView:
+                await RegisterParticipantViewAsync(connectionId, ct);
+                break;
+
+            case MessageTypes.UnregisterParticipantView:
+                await UnregisterParticipantViewAsync(connectionId, ct);
+                break;
+
+            case MessageTypes.ParticipantViewportUpdated:
+                if (TryDeserializePayload<UpdateParticipantViewportCommand>(payload, out var viewportCommand))
+                {
+                    await UpdateParticipantViewportAsync(connectionId, viewportCommand, ct);
+                    return;
+                }
+
+                await SendErrorAsync(connectionId, "Participant viewport payload is invalid.", ct);
+                break;
+
+            case MessageTypes.ReadingFocusUpdated:
+                if (TryDeserializePayload<UpdateReadingFocusCommand>(payload, out var focusCommand))
+                {
+                    await UpdateReadingFocusAsync(focusCommand, ct);
+                    return;
+                }
+
+                await SendErrorAsync(connectionId, "Reading focus payload is invalid.", ct);
+                break;
+
+            case MessageTypes.ApplyIntervention:
+                if (TryDeserializePayload<ApplyInterventionCommand>(payload, out var interventionCommand))
+                {
+                    await ApplyInterventionAsync(interventionCommand, ct);
+                    return;
+                }
+
+                await SendErrorAsync(connectionId, "Intervention payload is invalid.", ct);
+                break;
+
             case MessageTypes.ResearcherCommand:
                 if (payload.ValueKind == JsonValueKind.Object &&
                     payload.TryGetProperty("command", out var command) &&
@@ -210,24 +457,19 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
                     }
                 }
 
-                await _clientBroadcasterAdapter.SendToClientAsync(connectionId, MessageTypes.Error, new
-                {
-                    message = "Unsupported researcher command"
-                }, ct);
+                await SendErrorAsync(connectionId, "Unsupported researcher command", ct);
                 break;
 
             default:
-                await _clientBroadcasterAdapter.SendToClientAsync(connectionId, MessageTypes.Error, new
-                {
-                    message = $"Unsupported message type '{messageType}'"
-                }, ct);
+                await SendErrorAsync(connectionId, $"Unsupported message type '{messageType}'", ct);
                 break;
         }
     }
 
-    public Task HandleClientDisconnectedAsync(string connectionId, CancellationToken ct = default)
+    public async Task HandleClientDisconnectedAsync(string connectionId, CancellationToken ct = default)
     {
-        return UnsubscribeGazeDataAsync(connectionId, ct);
+        await UnsubscribeGazeDataAsync(connectionId, ct);
+        await UnregisterParticipantViewAsync(connectionId, ct);
     }
 
     private void OnGazeDataReceived(object? sender, GazeData gazeData)
@@ -284,6 +526,54 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         finally
         {
             _lifecycleGate.Release();
+        }
+    }
+
+    private async Task UnregisterParticipantViewAsync(string connectionId, CancellationToken ct)
+    {
+        ParticipantViewportSnapshot? viewport = null;
+        ReadingFocusSnapshot? focus = null;
+
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            if (!_participantViewConnections.TryRemove(connectionId, out _))
+            {
+                return;
+            }
+
+            if (_participantViewConnections.IsEmpty)
+            {
+                var updatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                _liveReadingSession = _liveReadingSession with
+                {
+                    ParticipantViewport = ParticipantViewportSnapshot.Disconnected with
+                    {
+                        UpdatedAtUnixMs = updatedAtUnixMs
+                    },
+                    Focus = ReadingFocusSnapshot.Empty with
+                    {
+                        UpdatedAtUnixMs = updatedAtUnixMs
+                    }
+                };
+
+                viewport = _liveReadingSession.ParticipantViewport.Copy();
+                focus = _liveReadingSession.Focus.Copy();
+            }
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+
+        if (viewport is not null)
+        {
+            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ParticipantViewportChanged, viewport, ct);
+        }
+
+        if (focus is not null)
+        {
+            await _clientBroadcasterAdapter.BroadcastAsync(MessageTypes.ReadingFocusChanged, focus, ct);
         }
     }
 
@@ -379,28 +669,88 @@ public sealed class ExperimentSessionManager : IExperimentSessionManager
         _calibrationSnapshot = snapshot.Calibration ?? CalibrationSessionSnapshots.CreateIdle();
         Interlocked.Exchange(ref _receivedGazeSamples, snapshot.ReceivedGazeSamples);
         Volatile.Write(ref _latestGazeSample, snapshot.LatestGazeSample?.Copy());
+        _liveReadingSession = snapshot.ReadingSession?.Copy() ?? LiveReadingSessionSnapshot.Empty;
     }
 
     private static ExperimentSetupSnapshot BuildSetupSnapshot(
         ExperimentSession session,
-        CalibrationSessionSnapshot calibrationSnapshot)
+        CalibrationSessionSnapshot calibrationSnapshot,
+        LiveReadingSessionSnapshot liveReadingSession)
     {
         var eyeTrackerSetupCompleted = session.EyeTrackerDevice is not null &&
                                        !string.IsNullOrWhiteSpace(session.EyeTrackerDevice.SerialNumber);
         var participantSetupCompleted = session.Participant is not null &&
                                         !string.IsNullOrWhiteSpace(session.Participant.Name);
         var calibrationCompleted = CalibrationSessionSnapshots.IsApplied(calibrationSnapshot);
+        var readingMaterialSetupCompleted = liveReadingSession.Content is not null &&
+                                            !string.IsNullOrWhiteSpace(liveReadingSession.Content.Markdown);
 
         var currentStepIndex =
             !eyeTrackerSetupCompleted ? 0 :
             !participantSetupCompleted ? 1 :
             !calibrationCompleted ? 2 :
-            2;
+            3;
 
         return new ExperimentSetupSnapshot(
             eyeTrackerSetupCompleted,
             participantSetupCompleted,
             calibrationCompleted,
+            readingMaterialSetupCompleted,
             currentStepIndex);
+    }
+
+    private static IReadOnlyList<InterventionEventSnapshot> BuildRecentInterventionHistory(
+        IReadOnlyList<InterventionEventSnapshot>? existing,
+        InterventionEventSnapshot next)
+    {
+        var items = existing is null
+            ? new List<InterventionEventSnapshot>()
+            : existing.Select(item => item.Copy()).ToList();
+
+        items.Insert(0, next.Copy());
+
+        if (items.Count > MaxRecentInterventions)
+        {
+            items.RemoveRange(MaxRecentInterventions, items.Count - MaxRecentInterventions);
+        }
+
+        return items;
+    }
+
+    private static bool TryDeserializePayload<T>(JsonElement payload, out T? value)
+    {
+        try
+        {
+            value = payload.Deserialize<T>(JsonOptions);
+            return value is not null;
+        }
+        catch
+        {
+            value = default;
+            return false;
+        }
+    }
+
+    private async Task SendErrorAsync(string connectionId, string message, CancellationToken ct)
+    {
+        await _clientBroadcasterAdapter.SendToClientAsync(connectionId, MessageTypes.Error, new
+        {
+            message
+        }, ct);
+    }
+
+    private static double Clamp(double value, double min, double max)
+    {
+        return Math.Min(max, Math.Max(min, value));
+    }
+
+    private static double? ClampNullable(double? value, double min, double max)
+    {
+        return value.HasValue ? Clamp(value.Value, min, max) : null;
+    }
+
+    private static string? NormalizeNullableText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 }

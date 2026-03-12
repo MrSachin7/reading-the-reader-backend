@@ -11,6 +11,16 @@ public interface IExperimentSessionManager
 
     ValueTask SetCalibrationStateAsync(CalibrationSessionSnapshot calibrationSnapshot, CancellationToken ct = default);
 
+    ValueTask SetReadingSessionAsync(UpsertReadingSessionCommand command, CancellationToken ct = default);
+
+    ValueTask<LiveReadingSessionSnapshot> RegisterParticipantViewAsync(string connectionId, CancellationToken ct = default);
+
+    ValueTask<ParticipantViewportSnapshot> UpdateParticipantViewportAsync(string connectionId, UpdateParticipantViewportCommand command, CancellationToken ct = default);
+
+    ValueTask<ReadingFocusSnapshot> UpdateReadingFocusAsync(UpdateReadingFocusCommand command, CancellationToken ct = default);
+
+    ValueTask<InterventionEventSnapshot?> ApplyInterventionAsync(ApplyInterventionCommand command, CancellationToken ct = default);
+
     Task<bool> StartSessionAsync(CancellationToken ct = default);
 
     Task<bool> StopSessionAsync(CancellationToken ct = default);
