@@ -18,6 +18,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\infrastructure\ReadingTheReader.Realtime.Persistence\ReadingTheReader.Realtime.Persistence.csproj" />
+        <ProjectReference Include="..\..\src\core\ReadingTheReader.core.Application\ReadingTheReader.core.Application.csproj" />
     </ItemGroup>
 
 </Project>

@@ -6,6 +6,7 @@ public sealed record ExperimentSetupSnapshot(
     bool EyeTrackerSetupCompleted,
     bool ParticipantSetupCompleted,
     bool CalibrationCompleted,
+    bool ReadingMaterialSetupCompleted,
     int CurrentStepIndex
 )
 {
@@ -15,6 +16,7 @@ public sealed record ExperimentSetupSnapshot(
             EyeTrackerSetupCompleted,
             ParticipantSetupCompleted,
             CalibrationCompleted,
+            ReadingMaterialSetupCompleted,
             CurrentStepIndex);
     }
 }
@@ -30,7 +32,8 @@ public sealed record ExperimentSessionSnapshot(
     ExperimentSetupSnapshot Setup,
     long ReceivedGazeSamples,
     GazeData? LatestGazeSample,
-    int ConnectedClients
+    int ConnectedClients,
+    LiveReadingSessionSnapshot? ReadingSession
 )
 {
     public ExperimentSessionSnapshot Copy()
@@ -43,10 +46,11 @@ public sealed record ExperimentSessionSnapshot(
             Participant?.Copy(),
             EyeTrackerDevice?.Copy(),
             Calibration is null ? CalibrationSessionSnapshots.CreateIdle() : CopyCalibration(Calibration),
-            Setup is null ? new ExperimentSetupSnapshot(false, false, false, 0) : Setup.Copy(),
+            Setup is null ? new ExperimentSetupSnapshot(false, false, false, false, 0) : Setup.Copy(),
             ReceivedGazeSamples,
             LatestGazeSample?.Copy(),
-            ConnectedClients);
+            ConnectedClients,
+            ReadingSession?.Copy() ?? LiveReadingSessionSnapshot.Empty);
     }
 
     private static CalibrationSessionSnapshot CopyCalibration(CalibrationSessionSnapshot source)

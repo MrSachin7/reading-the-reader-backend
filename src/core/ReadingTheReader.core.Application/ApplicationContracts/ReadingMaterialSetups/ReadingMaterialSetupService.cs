@@ -1,19 +1,11 @@
 using System.Text.RegularExpressions;
+using ReadingTheReader.core.Application.ApplicationContracts.Realtime;
 using ReadingTheReader.core.Application.InfrastructureContracts;
 
 namespace ReadingTheReader.core.Application.ApplicationContracts.ReadingMaterialSetups;
 
 public sealed class ReadingMaterialSetupService : IReadingMaterialSetupService
 {
-    internal const int MinFontSizePx = 12;
-    internal const int MaxFontSizePx = 48;
-    internal const int MinLineWidthPx = 320;
-    internal const int MaxLineWidthPx = 1600;
-    internal const double MinLineHeight = 1.0;
-    internal const double MaxLineHeight = 3.0;
-    internal const double MinLetterSpacingEm = -0.05;
-    internal const double MaxLetterSpacingEm = 0.2;
-
     private static readonly Regex ValidFontFamilyRegex = new(@"^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$", RegexOptions.Compiled);
     private readonly IReadingMaterialSetupStoreAdapter _readingMaterialSetupStoreAdapter;
 
@@ -81,24 +73,24 @@ public sealed class ReadingMaterialSetupService : IReadingMaterialSetupService
             throw new ReadingMaterialSetupValidationException("fontFamily is invalid.");
         }
 
-        if (fontSizePx < MinFontSizePx || fontSizePx > MaxFontSizePx)
+        if (fontSizePx < ReadingPresentationRules.MinFontSizePx || fontSizePx > ReadingPresentationRules.MaxFontSizePx)
         {
-            throw new ReadingMaterialSetupValidationException($"fontSizePx must be between {MinFontSizePx} and {MaxFontSizePx}.");
+            throw new ReadingMaterialSetupValidationException($"fontSizePx must be between {ReadingPresentationRules.MinFontSizePx} and {ReadingPresentationRules.MaxFontSizePx}.");
         }
 
-        if (lineWidthPx < MinLineWidthPx || lineWidthPx > MaxLineWidthPx)
+        if (lineWidthPx < ReadingPresentationRules.MinLineWidthPx || lineWidthPx > ReadingPresentationRules.MaxLineWidthPx)
         {
-            throw new ReadingMaterialSetupValidationException($"lineWidthPx must be between {MinLineWidthPx} and {MaxLineWidthPx}.");
+            throw new ReadingMaterialSetupValidationException($"lineWidthPx must be between {ReadingPresentationRules.MinLineWidthPx} and {ReadingPresentationRules.MaxLineWidthPx}.");
         }
 
-        if (lineHeight < MinLineHeight || lineHeight > MaxLineHeight)
+        if (lineHeight < ReadingPresentationRules.MinLineHeight || lineHeight > ReadingPresentationRules.MaxLineHeight)
         {
-            throw new ReadingMaterialSetupValidationException($"lineHeight must be between {MinLineHeight} and {MaxLineHeight}.");
+            throw new ReadingMaterialSetupValidationException($"lineHeight must be between {ReadingPresentationRules.MinLineHeight} and {ReadingPresentationRules.MaxLineHeight}.");
         }
 
-        if (letterSpacingEm < MinLetterSpacingEm || letterSpacingEm > MaxLetterSpacingEm)
+        if (letterSpacingEm < ReadingPresentationRules.MinLetterSpacingEm || letterSpacingEm > ReadingPresentationRules.MaxLetterSpacingEm)
         {
-            throw new ReadingMaterialSetupValidationException($"letterSpacingEm must be between {MinLetterSpacingEm} and {MaxLetterSpacingEm}.");
+            throw new ReadingMaterialSetupValidationException($"letterSpacingEm must be between {ReadingPresentationRules.MinLetterSpacingEm} and {ReadingPresentationRules.MaxLetterSpacingEm}.");
         }
     }
 }
