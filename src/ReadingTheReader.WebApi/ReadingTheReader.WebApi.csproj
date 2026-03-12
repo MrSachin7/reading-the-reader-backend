@@ -27,7 +27,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <Folder Include="data\" />
+      <Folder Include="data\reading-material-setups\" />
     </ItemGroup>
 
 </Project>

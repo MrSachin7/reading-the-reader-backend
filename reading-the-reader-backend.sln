@@ -26,6 +26,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{1E92DD72-4
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Documentations", "docs\Documentations\Documentations.csproj", "{9594DB08-998B-4DAA-AD8D-BD84AAF3F380}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReadingTheReader.Realtime.Persistence.Tests", "tests\ReadingTheReader.Realtime.Persistence.Tests\ReadingTheReader.Realtime.Persistence.Tests.csproj", "{AECC580B-1D44-4670-B971-A9D8CFD698E7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -60,6 +62,10 @@ Global
 		{9594DB08-998B-4DAA-AD8D-BD84AAF3F380}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9594DB08-998B-4DAA-AD8D-BD84AAF3F380}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9594DB08-998B-4DAA-AD8D-BD84AAF3F380}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AECC580B-1D44-4670-B971-A9D8CFD698E7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AECC580B-1D44-4670-B971-A9D8CFD698E7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AECC580B-1D44-4670-B971-A9D8CFD698E7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AECC580B-1D44-4670-B971-A9D8CFD698E7}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{149B6E42-3350-40B3-9129-37E523C5C379} = {D8C55EFF-4B25-4861-9999-94C38CD8EE61}
@@ -71,5 +77,6 @@ Global
 		{B4BFDFC4-AB4D-49C5-9443-26F57F3A2444} = {AB1EF778-341A-485C-9208-5DF8549574B6}
 		{999D8829-8E12-4AD1-BD7C-EB7EEF77966F} = {AB1EF778-341A-485C-9208-5DF8549574B6}
 		{9594DB08-998B-4DAA-AD8D-BD84AAF3F380} = {1E92DD72-4701-43CE-A7DD-8EE01E58653D}
+		{AECC580B-1D44-4670-B971-A9D8CFD698E7} = {663A1D72-CEA8-4DE3-99D7-5A688B9B82E1}
 	EndGlobalSection
 EndGlobal
