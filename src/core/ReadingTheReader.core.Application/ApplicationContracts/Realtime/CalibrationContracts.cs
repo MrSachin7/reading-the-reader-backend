@@ -69,8 +69,6 @@ public static class CalibrationSessionSnapshots
 
     public static bool IsApplied(CalibrationSessionSnapshot? snapshot)
     {
-        return snapshot is not null &&
-               string.Equals(snapshot.Status, "completed", StringComparison.OrdinalIgnoreCase) &&
-               snapshot.Result?.Applied == true;
+        return snapshot?.Result?.Applied == true;
     }
 }
