@@ -15,17 +15,19 @@ public static class RealtimePersistenceModuleInstaller
             ?? new ExperimentPersistenceOptions();
         var readingMaterialSetupOptions = configuration.GetSection(ReadingMaterialSetupStorageOptions.SectionName).Get<ReadingMaterialSetupStorageOptions>()
             ?? new ReadingMaterialSetupStorageOptions();
+        var useFileProvider = string.Equals(options.Provider, "File", StringComparison.OrdinalIgnoreCase);
 
-        if (string.Equals(options.Provider, "File", StringComparison.OrdinalIgnoreCase))
+        if (useFileProvider)
         {
             services.AddSingleton<IExperimentStateStoreAdapter>(_ => new FileSnapshotExperimentStateStoreAdapter(options.SnapshotFilePath));
+            services.AddSingleton<IReadingMaterialSetupStoreAdapter>(_ => new FileReadingMaterialSetupStoreAdapter(readingMaterialSetupOptions.DirectoryPath));
         }
         else
         {
             services.AddSingleton<IExperimentStateStoreAdapter, InMemoryExperimentStateStoreAdapter>();
+            services.AddSingleton<IReadingMaterialSetupStoreAdapter, InMemoryReadingMaterialSetupStoreAdapter>();
         }
 
-        services.AddSingleton<IReadingMaterialSetupStoreAdapter>(_ => new FileReadingMaterialSetupStoreAdapter(readingMaterialSetupOptions.DirectoryPath));
         services.AddSingleton<IEyeTrackerLicenseStoreAdapter, FileEyeTrackerLicenseStoreAdapter>();
         services.AddHostedService<ExperimentStateCheckpointWorker>();
 
