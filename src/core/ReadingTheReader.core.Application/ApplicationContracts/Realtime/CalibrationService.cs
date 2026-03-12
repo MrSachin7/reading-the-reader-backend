@@ -208,6 +208,11 @@ public sealed class CalibrationService : ICalibrationService
         {
             await _eyeTrackerAdapter.CancelCalibrationAsync(ct);
 
+            if (!string.Equals(_snapshot.Status, "running", StringComparison.OrdinalIgnoreCase))
+            {
+                return _snapshot;
+            }
+
             var completedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             _snapshot = _snapshot with
             {
